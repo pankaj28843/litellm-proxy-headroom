@@ -43,6 +43,7 @@ services:
         condition: service_started
     environment:
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:?set LITELLM_MASTER_KEY in .env}
+      CONFIG_FILE_PATH: /app/config/litellm.yaml
       CHATGPT_TOKEN_DIR: /data/chatgpt
       CHATGPT_AUTH_FILE: ${CHATGPT_AUTH_FILE:-auth.json}
       LITELLM_OTEL_V2: "true"
@@ -53,11 +54,35 @@ services:
       PHOENIX_COLLECTOR_ENDPOINT: http://phoenix:6006/v1/traces
       PHOENIX_PROJECT_NAME: ${PHOENIX_PROJECT_NAME:-litellm-proxy-headroom}
       OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT: no_content
+      HEADROOM_WORKSPACE_DIR: /data/headroom
+      HEADROOM_MCP_PROXY_URL: ${HEADROOM_MCP_PROXY_URL:-http://127.0.0.1:4000/headroom}
     ports:
       - "127.0.0.1:4000:4000"
     volumes:
       - ./config:/app/config:ro
       - ./data/chatgpt:/data/chatgpt
+      - ./data/headroom:/data/headroom
+
+  headroom-mcp:
+    build:
+      context: .
+    profiles:
+      - mcp
+    depends_on:
+      litellm:
+        condition: service_started
+    environment:
+      HEADROOM_WORKSPACE_DIR: /data/headroom
+    command:
+      - headroom
+      - mcp
+      - serve
+      - --proxy-url
+      - http://litellm:4000/headroom
+    stdin_open: true
+    tty: false
+    volumes:
+      - ./data/headroom:/data/headroom
 
   open-webui:
     image: ghcr.io/open-webui/open-webui:main

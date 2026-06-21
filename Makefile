@@ -6,7 +6,7 @@ CHATGPT_AUTH_FILE ?= auth.json
 
 .DEFAULT_GOAL := up
 
-.PHONY: up init env auth-import build down restart logs ps test lint format-check check config clean
+.PHONY: up init env auth-import build down restart logs ps mcp test lint format-check check config clean
 
 up: init
 	$(COMPOSE) up -d --build
@@ -16,7 +16,7 @@ up: init
 	@printf '\nIf ChatGPT auth is missing, run: make logs SERVICE=litellm\n'
 
 init: env
-	mkdir -p data/chatgpt logs tmp
+	mkdir -p data/chatgpt data/headroom logs tmp
 
 env:
 	@if [ ! -f .env ]; then cp .env.example .env; printf 'created .env from .env.example\n'; fi
@@ -44,6 +44,9 @@ logs:
 
 ps:
 	$(COMPOSE) ps
+
+mcp: init
+	$(COMPOSE) run --rm headroom-mcp
 
 test:
 	uv run pytest -q

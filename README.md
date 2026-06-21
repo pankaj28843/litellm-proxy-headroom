@@ -54,12 +54,15 @@ directories, builds the LiteLLM image, and starts:
 - LiteLLM: <http://127.0.0.1:4000>
 - Open WebUI: <http://127.0.0.1:8080>
 - Phoenix: <http://127.0.0.1:6006>
+- Headroom routes: <http://127.0.0.1:4000/headroom>
+- Headroom MCP Streamable HTTP: <http://127.0.0.1:4000/headroom/mcp>
 - Phoenix PostgreSQL on the private Compose network
 
 Useful targets:
 
 ```bash
 make auth-import        # copy existing sibling ChatGPT OAuth file if present
+make mcp                # run Headroom's stdio MCP server against /headroom
 make logs SERVICE=litellm
 make ps
 make down
@@ -76,3 +79,9 @@ The compose stack sends LiteLLM OTel v2 traces to Phoenix using the
 `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=no_content`. Open WebUI is
 configured to forward user/chat/message metadata headers to LiteLLM and export
 OTEL traces to Phoenix over OTLP/gRPC.
+
+Headroom's full proxy app is mounted inside the LiteLLM wrapper at `/headroom`,
+so its stats, metrics, CCR retrieval and debug routes are available on the same
+localhost-bound LiteLLM port. Its MCP server is exposed two ways: Streamable HTTP
+at `/headroom/mcp`, and the documented stdio server via `make mcp` for local MCP
+hosts that expect a command.

@@ -9,6 +9,7 @@ def test_compose_wires_litellm_to_persistent_chatgpt_auth_and_phoenix() -> None:
     litellm = compose["services"]["litellm"]
 
     assert "./data/chatgpt:/data/chatgpt" in litellm["volumes"]
+    assert litellm["environment"]["CONFIG_FILE_PATH"] == "/app/config/litellm.yaml"
     assert litellm["environment"]["CHATGPT_TOKEN_DIR"] == "/data/chatgpt"
     assert litellm["environment"]["LITELLM_OTEL_V2"] == "true"
     assert (
@@ -19,6 +20,8 @@ def test_compose_wires_litellm_to_persistent_chatgpt_auth_and_phoenix() -> None:
         litellm["environment"]["OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT"]
         == "no_content"
     )
+    assert litellm["environment"]["HEADROOM_WORKSPACE_DIR"] == "/data/headroom"
+    assert "./data/headroom:/data/headroom" in litellm["volumes"]
 
 
 def test_compose_keeps_user_facing_services_bound_to_localhost() -> None:
@@ -39,3 +42,20 @@ def test_compose_configures_openwebui_for_litellm_and_otel() -> None:
     assert open_webui["ENABLE_OTEL"] == "true"
     assert open_webui["ENABLE_OTEL_TRACES"] == "true"
     assert open_webui["OTEL_EXPORTER_OTLP_ENDPOINT"] == "http://phoenix:4317"
+
+
+def test_compose_includes_headroom_mcp_stdio_service() -> None:
+    compose = yaml.safe_load(Path("docker-compose.yml").read_text(encoding="utf-8"))
+
+    mcp = compose["services"]["headroom-mcp"]
+
+    assert mcp["profiles"] == ["mcp"]
+    assert mcp["environment"]["HEADROOM_WORKSPACE_DIR"] == "/data/headroom"
+    assert mcp["command"] == [
+        "headroom",
+        "mcp",
+        "serve",
+        "--proxy-url",
+        "http://litellm:4000/headroom",
+    ]
+    assert "./data/headroom:/data/headroom" in mcp["volumes"]

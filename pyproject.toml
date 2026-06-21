@@ -1,0 +1,37 @@
+[project]
+name = "litellm-proxy-headroom"
+version = "0.1.0"
+description = "Minimal LiteLLM proxy setup with ChatGPT provider and Headroom compression."
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "headroom-ai",
+    "litellm[proxy]",
+    "pydantic-settings",
+    "uvicorn[standard]",
+]
+
+[dependency-groups]
+dev = [
+    "pytest",
+    "ruff",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/litellm_proxy_headroom"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I", "UP", "B", "SIM"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

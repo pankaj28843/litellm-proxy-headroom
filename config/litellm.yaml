@@ -1,0 +1,8 @@
+model_list:
+  - model_name: chatgpt
+    litellm_params:
+      model: chatgpt/gpt-5.4
+
+litellm_settings:
+  callbacks:
+    - headroom_litellm_callback.HeadroomCallback

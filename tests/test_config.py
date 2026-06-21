@@ -10,5 +10,6 @@ def test_litellm_config_uses_chatgpt_provider_and_headroom_callback() -> None:
     assert model["model_name"] == "chatgpt"
     assert model["litellm_params"]["model"].startswith("chatgpt/")
     assert config["litellm_settings"]["callbacks"] == [
-        "headroom_litellm_callback.HeadroomCallback"
+        "headroom_litellm_callback.HeadroomCallback",
+        "arize_phoenix",
     ]

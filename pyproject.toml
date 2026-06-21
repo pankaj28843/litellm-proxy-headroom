@@ -5,8 +5,13 @@ description = "Minimal LiteLLM proxy setup with ChatGPT provider and Headroom co
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
 dependencies = [
+    "grpcio>=1.81.1",
     "headroom-ai",
     "litellm[proxy]",
+    "opentelemetry-api>=1.42.1",
+    "opentelemetry-exporter-otlp>=1.42.1",
+    "opentelemetry-instrumentation-fastapi>=0.63b1",
+    "opentelemetry-sdk>=1.42.1",
     "pydantic-settings",
     "uvicorn[standard]",
 ]

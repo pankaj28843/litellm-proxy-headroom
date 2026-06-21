@@ -1,0 +1,96 @@
+services:
+  phoenix-db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: phoenix
+      POSTGRES_USER: phoenix
+      POSTGRES_PASSWORD: ${PHOENIX_DB_PASSWORD:?set PHOENIX_DB_PASSWORD in .env}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U phoenix -d phoenix"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - phoenix_pgdata:/var/lib/postgresql/data
+
+  phoenix:
+    image: arizephoenix/phoenix:latest
+    restart: unless-stopped
+    depends_on:
+      phoenix-db:
+        condition: service_healthy
+    environment:
+      PHOENIX_POSTGRES_HOST: phoenix-db
+      PHOENIX_POSTGRES_PORT: "5432"
+      PHOENIX_POSTGRES_USER: phoenix
+      PHOENIX_POSTGRES_PASSWORD: ${PHOENIX_DB_PASSWORD:?set PHOENIX_DB_PASSWORD in .env}
+      PHOENIX_POSTGRES_DB: phoenix
+      PHOENIX_DEFAULT_RETENTION_POLICY_DAYS: ${PHOENIX_DEFAULT_RETENTION_POLICY_DAYS:-90}
+      PHOENIX_TELEMETRY_ENABLED: "false"
+    ports:
+      - "127.0.0.1:6006:6006"
+    expose:
+      - "4317"
+      - "6006"
+
+  litellm:
+    build:
+      context: .
+    restart: unless-stopped
+    depends_on:
+      phoenix:
+        condition: service_started
+    environment:
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:?set LITELLM_MASTER_KEY in .env}
+      CHATGPT_TOKEN_DIR: /data/chatgpt
+      CHATGPT_AUTH_FILE: ${CHATGPT_AUTH_FILE:-auth.json}
+      LITELLM_OTEL_V2: "true"
+      OTEL_SERVICE_NAME: litellm-proxy
+      OTEL_EXPORTER: otlp_http
+      OTEL_ENDPOINT: http://phoenix:6006/v1/traces
+      PHOENIX_COLLECTOR_HTTP_ENDPOINT: http://phoenix:6006/v1/traces
+      PHOENIX_COLLECTOR_ENDPOINT: http://phoenix:6006/v1/traces
+      PHOENIX_PROJECT_NAME: ${PHOENIX_PROJECT_NAME:-litellm-proxy-headroom}
+      OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT: no_content
+    ports:
+      - "127.0.0.1:4000:4000"
+    volumes:
+      - ./config:/app/config:ro
+      - ./data/chatgpt:/data/chatgpt
+
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:main
+    restart: unless-stopped
+    depends_on:
+      litellm:
+        condition: service_started
+      phoenix:
+        condition: service_started
+    environment:
+      WEBUI_SECRET_KEY: ${WEBUI_SECRET_KEY:?set WEBUI_SECRET_KEY in .env}
+      WEBUI_ADMIN_EMAIL: ${WEBUI_ADMIN_EMAIL:-admin@example.local}
+      WEBUI_ADMIN_PASSWORD: ${WEBUI_ADMIN_PASSWORD:?set WEBUI_ADMIN_PASSWORD in .env}
+      WEBUI_ADMIN_NAME: ${WEBUI_ADMIN_NAME:-Admin}
+      ENABLE_SIGNUP: "false"
+      DEFAULT_USER_ROLE: pending
+      SAFE_MODE: "true"
+      LOG_FORMAT: json
+      OPENAI_API_BASE_URL: http://litellm:4000/v1
+      OPENAI_API_KEY: ${LITELLM_MASTER_KEY:?set LITELLM_MASTER_KEY in .env}
+      ENABLE_FORWARD_USER_INFO_HEADERS: "true"
+      ENABLE_OTEL: "true"
+      ENABLE_OTEL_TRACES: "true"
+      ENABLE_OTEL_METRICS: "false"
+      ENABLE_OTEL_LOGS: "false"
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://phoenix:4317
+      OTEL_EXPORTER_OTLP_INSECURE: "true"
+      OTEL_SERVICE_NAME: open-webui
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - openwebui_data:/app/backend/data
+
+volumes:
+  phoenix_pgdata:
+  openwebui_data:

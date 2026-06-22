@@ -20,14 +20,34 @@ def test_compose_wires_litellm_to_persistent_chatgpt_auth_and_phoenix() -> None:
         litellm["environment"]["OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT"]
         == "no_content"
     )
-    assert litellm["environment"]["HEADROOM_WORKSPACE_DIR"] == "/data/headroom"
     assert "./data/headroom:/data/headroom" in litellm["volumes"]
+    assert litellm["command"] == [
+        "litellm",
+        "--config",
+        "/app/config/litellm.yaml",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "4000",
+    ]
+    assert litellm["expose"] == ["4000"]
+
+
+def test_compose_runs_headroom_as_the_public_proxy() -> None:
+    compose = yaml.safe_load(Path("docker-compose.yml").read_text(encoding="utf-8"))
+
+    headroom = compose["services"]["headroom"]
+
+    assert headroom["environment"]["HEADROOM_WORKSPACE_DIR"] == "/data/headroom"
+    assert headroom["environment"]["OPENAI_TARGET_API_URL"] == "http://litellm:4000"
+    assert "127.0.0.1:4000:4000" in headroom["ports"]
+    assert "./data/headroom:/data/headroom" in headroom["volumes"]
 
 
 def test_compose_keeps_user_facing_services_bound_to_localhost() -> None:
     compose = yaml.safe_load(Path("docker-compose.yml").read_text(encoding="utf-8"))
 
-    assert "127.0.0.1:4000:4000" in compose["services"]["litellm"]["ports"]
+    assert "127.0.0.1:4000:4000" in compose["services"]["headroom"]["ports"]
     assert "127.0.0.1:6006:6006" in compose["services"]["phoenix"]["ports"]
     assert "127.0.0.1:8080:8080" in compose["services"]["open-webui"]["ports"]
 
@@ -37,7 +57,7 @@ def test_compose_configures_openwebui_for_litellm_and_otel() -> None:
 
     open_webui = compose["services"]["open-webui"]["environment"]
 
-    assert open_webui["OPENAI_API_BASE_URL"] == "http://litellm:4000/v1"
+    assert open_webui["OPENAI_API_BASE_URL"] == "http://headroom:4000/v1"
     assert open_webui["ENABLE_FORWARD_USER_INFO_HEADERS"] == "true"
     assert open_webui["ENABLE_OTEL"] == "true"
     assert open_webui["ENABLE_OTEL_TRACES"] == "true"
@@ -56,6 +76,6 @@ def test_compose_includes_headroom_mcp_stdio_service() -> None:
         "mcp",
         "serve",
         "--proxy-url",
-        "http://litellm:4000/headroom",
+        "http://headroom:4000",
     ]
     assert "./data/headroom:/data/headroom" in mcp["volumes"]

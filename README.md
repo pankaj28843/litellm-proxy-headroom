@@ -1,7 +1,7 @@
 # LiteLLM Proxy Headroom
 
-Minimal uv-managed LiteLLM proxy setup with ChatGPT as the provider and
-Headroom compression enabled.
+Minimal uv-managed stack with Headroom's native proxy in front of a LiteLLM
+proxy configured for ChatGPT.
 
 ## Run
 
@@ -11,10 +11,10 @@ Install dependencies:
 uv sync
 ```
 
-Run the zero-custom-code LiteLLM proxy:
+Run the raw LiteLLM upstream on a private local port:
 
 ```bash
-uv run litellm --config config/litellm.yaml --host 127.0.0.1 --port 4000
+uv run litellm --config config/litellm.yaml --host 127.0.0.1 --port 4001
 ```
 
 The LiteLLM config uses ChatGPT's `chatgpt/` provider route and a config-local
@@ -23,10 +23,12 @@ Headroom's installed `HeadroomCallback` for LiteLLM's proxy callback loader.
 On a machine without existing ChatGPT device credentials, LiteLLM prompts for
 the ChatGPT OAuth device flow during startup.
 
-Run the optional ASGI wrapper:
+Run Headroom's native proxy as the public OpenAI-compatible endpoint:
 
 ```bash
-uv run uvicorn litellm_proxy_headroom.app:app --host 127.0.0.1 --port 4000
+OPENAI_TARGET_API_URL=http://127.0.0.1:4001 \
+HEADROOM_WORKSPACE_DIR=./data/headroom \
+uv run headroom proxy --host 127.0.0.1 --port 4000
 ```
 
 ## Check
@@ -49,20 +51,19 @@ make
 ```
 
 That creates `.env` from `.env.example` if needed, creates local runtime
-directories, builds the LiteLLM image, and starts:
+directories, builds the shared Python image, and starts:
 
-- LiteLLM: <http://127.0.0.1:4000>
+- Headroom + LiteLLM API: <http://127.0.0.1:4000>
+- Headroom dashboard: <http://127.0.0.1:4000/dashboard>
 - Open WebUI: <http://127.0.0.1:8080>
 - Phoenix: <http://127.0.0.1:6006>
-- Headroom routes: <http://127.0.0.1:4000/headroom>
-- Headroom MCP Streamable HTTP: <http://127.0.0.1:4000/headroom/mcp>
 - Phoenix PostgreSQL on the private Compose network
 
 Useful targets:
 
 ```bash
 make auth-import        # copy existing sibling ChatGPT OAuth file if present
-make mcp                # run Headroom's stdio MCP server against /headroom
+make mcp                # run Headroom's stdio MCP server against the proxy
 make logs SERVICE=litellm
 make ps
 make down
@@ -77,11 +78,9 @@ without printing its contents.
 The compose stack sends LiteLLM OTel v2 traces to Phoenix using the
 `arize_phoenix` callback and keeps prompt/response capture disabled with
 `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=no_content`. Open WebUI is
-configured to forward user/chat/message metadata headers to LiteLLM and export
-OTEL traces to Phoenix over OTLP/gRPC.
+configured to forward user/chat/message metadata headers to Headroom, which
+forwards OpenAI-compatible requests to the internal LiteLLM upstream.
 
-Headroom's full proxy app is mounted inside the LiteLLM wrapper at `/headroom`,
-so its stats, metrics, CCR retrieval and debug routes are available on the same
-localhost-bound LiteLLM port. Its MCP server is exposed two ways: Streamable HTTP
-at `/headroom/mcp`, and the documented stdio server via `make mcp` for local MCP
-hosts that expect a command.
+Headroom runs at its documented root instead of being mounted under LiteLLM.
+This keeps `/dashboard`, `/health`, `/stats`, `/stats-history`, and `/v1/*`
+on the same localhost-bound public port without wrapper route aliases.

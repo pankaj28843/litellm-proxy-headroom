@@ -12,7 +12,8 @@ up: init
 	$(COMPOSE) up -d --build
 	@printf '\nOpen WebUI: http://127.0.0.1:8080\n'
 	@printf 'Phoenix:    http://127.0.0.1:6006\n'
-	@printf 'LiteLLM:    http://127.0.0.1:4000\n'
+	@printf 'Headroom:   http://127.0.0.1:4000\n'
+	@printf 'Dashboard:  http://127.0.0.1:4000/dashboard\n'
 	@printf '\nIf ChatGPT auth is missing, run: make logs SERVICE=litellm\n'
 
 init: env

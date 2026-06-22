@@ -918,7 +918,6 @@ dependencies = [
     { name = "opentelemetry-exporter-otlp" },
     { name = "opentelemetry-instrumentation-fastapi" },
     { name = "opentelemetry-sdk" },
-    { name = "pydantic-settings" },
     { name = "uvicorn", extra = ["standard"] },
 ]
 
@@ -937,7 +936,6 @@ requires-dist = [
     { name = "opentelemetry-exporter-otlp", specifier = ">=1.42.1" },
     { name = "opentelemetry-instrumentation-fastapi", specifier = ">=0.63b1" },
     { name = "opentelemetry-sdk", specifier = ">=1.42.1" },
-    { name = "pydantic-settings" },
     { name = "uvicorn", extras = ["standard"] },
 ]
 

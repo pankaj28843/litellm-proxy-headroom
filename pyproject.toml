@@ -12,7 +12,6 @@ dependencies = [
     "opentelemetry-exporter-otlp>=1.42.1",
     "opentelemetry-instrumentation-fastapi>=0.63b1",
     "opentelemetry-sdk>=1.42.1",
-    "pydantic-settings",
     "uvicorn[standard]",
 ]
 

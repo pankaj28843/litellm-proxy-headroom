@@ -17,4 +17,4 @@ RUN uv sync --frozen --no-dev
 
 EXPOSE 4000
 
-CMD ["uvicorn", "litellm_proxy_headroom.app:app", "--host", "0.0.0.0", "--port", "4000"]
+CMD ["headroom", "proxy", "--host", "0.0.0.0", "--port", "4000"]

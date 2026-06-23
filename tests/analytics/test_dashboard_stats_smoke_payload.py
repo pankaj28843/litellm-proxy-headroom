@@ -28,6 +28,7 @@ def test_dashboard_smoke_payload_models_estimates_cost_and_negative_savings() ->
         provider_cost="0.03000000",
         estimated_baseline_cost="0.01600000",
         estimated_after_input_tokens=900,
+        provider_cached_input_tokens=225,
     )
 
     provider_call = payload["provider_calls"][0]
@@ -42,5 +43,10 @@ def test_dashboard_smoke_payload_models_estimates_cost_and_negative_savings() ->
     assert provider_call["cost_total"] == "0.03000000"
     assert provider_call["cost_calculations"][0]["total_cost"] == "0.01600000"
     assert token_usage_by_source["provider_reported"]["input_tokens"] == 900
+    assert token_usage_by_source["provider_reported"]["cached_input_tokens"] == 225
+    assert (
+        token_usage_by_source["provider_reported"]["newly_processed_input_tokens"]
+        == 675
+    )
     assert token_usage_by_source["estimated_before"]["input_tokens"] == 800
     assert token_usage_by_source["estimated_after"]["input_tokens"] == 900

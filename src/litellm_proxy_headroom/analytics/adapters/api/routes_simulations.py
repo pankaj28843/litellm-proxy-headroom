@@ -26,8 +26,8 @@ async def run_simulation(
     simulation_telemetry = get_simulation_telemetry()
     started = time.perf_counter()
     with telemetry.start_span(
-        "headroom.analytics.simulation.run",
-        {"headroom.analytics.operation": "simulation"},
+        "litellm.proxy.analytics.simulation.run",
+        {"litellm.proxy.analytics.operation": "simulation"},
     ):
         try:
             detail = await SimulationService(

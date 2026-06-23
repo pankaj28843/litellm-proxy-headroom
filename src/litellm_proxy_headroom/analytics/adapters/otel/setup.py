@@ -27,14 +27,15 @@ def _enabled(name: str, default: bool) -> bool:
 
 
 def _service_resource() -> Resource:
-    return Resource.create(
-        {
-            "service.name": os.getenv(
-                "OTEL_SERVICE_NAME", "headroom-analytics-backend"
-            ),
-            "service.namespace": "litellm-proxy-headroom",
-        }
-    )
+    attrs = {
+        "service.name": os.getenv("OTEL_SERVICE_NAME", "litellm-analytics-backend"),
+        "service.namespace": "litellm-proxy",
+    }
+    project_name = os.getenv("PHOENIX_PROJECT_NAME", "").strip()
+    if project_name:
+        # Phoenix groups generic OTLP spans by this OpenInference resource key.
+        attrs["openinference.project.name"] = project_name
+    return Resource.create(attrs)
 
 
 def _http_endpoint(signal: str) -> str | None:

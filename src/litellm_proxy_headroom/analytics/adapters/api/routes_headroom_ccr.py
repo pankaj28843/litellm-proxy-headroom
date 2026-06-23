@@ -87,11 +87,11 @@ async def record_headroom_ccr_retrieval(
     telemetry = get_analytics_telemetry()
     repository = AnalyticsPostgresRepository(session)
     with telemetry.start_span(
-        "headroom.analytics.ccr.record_retrieval",
+        "litellm.proxy.analytics.ccr.record_retrieval",
         {
-            "headroom.analytics.operation": "record_ccr_retrieval",
-            "headroom.analytics.retrieval.source": command.retrieval_source,
-            "headroom.analytics.ccr_hash": hash_key,
+            "litellm.proxy.analytics.operation": "record_ccr_retrieval",
+            "litellm.proxy.analytics.retrieval.source": command.retrieval_source,
+            "litellm.proxy.analytics.ccr_hash": hash_key,
         },
     ):
         event_id = await repository.record_chunk_retrieval(

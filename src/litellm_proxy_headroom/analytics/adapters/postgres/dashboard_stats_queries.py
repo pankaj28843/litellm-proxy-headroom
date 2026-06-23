@@ -12,7 +12,11 @@ from .dashboard_distribution_queries import (
     savings_distributions,
 )
 from .dashboard_helpers import int_value, percent
-from .dashboard_provider_queries import cost_stats, provider_estimate_delta
+from .dashboard_provider_queries import (
+    cost_stats,
+    provider_cache_stats,
+    provider_estimate_delta,
+)
 from .query_filters import matching_execution_rows
 
 
@@ -60,6 +64,12 @@ async def dashboard_stats(
             session,
             execution_ids=execution_ids,
             filters=filters,
+        ),
+        provider_cache=await provider_cache_stats(
+            session,
+            execution_ids=execution_ids,
+            filters=filters,
+            fallback_baseline_input_tokens=original_tokens,
         ),
         cost=await cost_stats(session, execution_ids=execution_ids, filters=filters),
         cache=await cache_dashboard_stats(session, execution_ids),

@@ -133,7 +133,7 @@ async def main() -> int:
     breakdown_rows = breakdown_data["rows"]
     if not breakdown_rows or breakdown_rows[0]["value"] != filters["provider"]:
         return _fail("breakdown_provider_missing")
-    if "headroom_analytics_tokens_saved_total" not in metrics.text:
+    if "litellm_proxy_analytics_tokens_saved_total" not in metrics.text:
         return _fail("metrics_missing_tokens_saved")
 
     print(

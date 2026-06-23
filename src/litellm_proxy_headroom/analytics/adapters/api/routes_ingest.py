@@ -22,11 +22,11 @@ async def ingest_compression(
     telemetry = get_analytics_telemetry()
     started = time.perf_counter()
     attrs = {
-        "headroom.analytics.operation": "ingest",
-        "headroom.analytics.event.source": command.event.source,
-        "headroom.analytics.event.type": command.event.event_type,
+        "litellm.proxy.analytics.operation": "ingest",
+        "litellm.proxy.analytics.event.source": command.event.source,
+        "litellm.proxy.analytics.event.type": command.event.event_type,
     }
-    with telemetry.start_span("headroom.analytics.ingest", attrs):
+    with telemetry.start_span("litellm.proxy.analytics.ingest", attrs):
         repository = AnalyticsPostgresRepository(session)
         try:
             result = await AnalyticsIngestionService(

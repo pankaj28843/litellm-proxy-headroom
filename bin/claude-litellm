@@ -1,0 +1,109 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+repo_root="$(cd -- "${script_dir}/.." && pwd -P)"
+env_file="${repo_root}/.env"
+
+if [[ -f "${env_file}" ]]; then
+  set -a
+  # shellcheck disable=SC1090
+  . "${env_file}"
+  set +a
+fi
+
+needs_key=1
+for arg in "$@"; do
+  case "${arg}" in
+    -h|--help|help|-v|--version)
+      needs_key=0
+      ;;
+  esac
+done
+
+if [[ -n "${LITELLM_MASTER_KEY:-}" ]]; then
+  export ANTHROPIC_AUTH_TOKEN="${LITELLM_MASTER_KEY}"
+elif [[ "${needs_key}" -eq 1 ]]; then
+  printf 'claude-litellm: LITELLM_MASTER_KEY is not set; add it to %s or the environment.\n' "${env_file}" >&2
+  exit 1
+fi
+
+export ANTHROPIC_BASE_URL="${CLAUDE_LITELLM_BASE_URL:-http://127.0.0.1:4000}"
+export CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY="${CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY:-1}"
+
+state_dir="${CLAUDE_LITELLM_STATE_DIR:-${repo_root}/tmp/claude-litellm}"
+mcp_config="${state_dir}/mcp.json"
+mkdir -p "${state_dir}"
+
+cat > "${mcp_config}" <<'JSON'
+{
+  "mcpServers": {
+    "analytics": {
+      "type": "http",
+      "url": "http://127.0.0.1:8010/mcp/"
+    }
+  }
+}
+JSON
+
+realpath_of() {
+  python3 -c 'import os, sys; print(os.path.realpath(sys.argv[1]))' "$1"
+}
+
+self_real="$(realpath_of "${BASH_SOURCE[0]}")"
+real_claude=""
+
+while IFS= read -r candidate; do
+  [[ -z "${candidate}" ]] && continue
+  candidate_real="$(realpath_of "${candidate}")"
+  if [[ "${candidate_real}" == "${self_real}" ]]; then
+    continue
+  fi
+  real_claude="${candidate}"
+  break
+done < <(type -a -P claude 2>/dev/null | awk '!seen[$0]++')
+
+if [[ -z "${real_claude}" ]]; then
+  printf 'claude-litellm: could not find a claude binary on PATH other than this wrapper.\n' >&2
+  exit 127
+fi
+
+has_model=0
+has_mcp_config=0
+has_allowed_tools=0
+has_setting_sources=0
+for arg in "$@"; do
+  case "${arg}" in
+    --model|--model=*)
+      has_model=1
+      ;;
+    --mcp-config|--mcp-config=*)
+      has_mcp_config=1
+      ;;
+    --allowedTools|--allowed-tools|--allowedTools=*|--allowed-tools=*)
+      has_allowed_tools=1
+      ;;
+    --setting-sources|--setting-sources=*)
+      has_setting_sources=1
+      ;;
+  esac
+done
+
+extra_args=()
+if [[ "${has_setting_sources}" -eq 0 ]]; then
+  extra_args+=(--setting-sources "${CLAUDE_LITELLM_SETTING_SOURCES:-project}")
+fi
+if [[ "${has_mcp_config}" -eq 0 ]]; then
+  extra_args+=(--mcp-config "${mcp_config}")
+  if [[ "${CLAUDE_LITELLM_STRICT_MCP:-1}" != "0" ]]; then
+    extra_args+=(--strict-mcp-config)
+  fi
+fi
+if [[ "${has_allowed_tools}" -eq 0 ]]; then
+  extra_args+=(--allowedTools "mcp__analytics__*")
+fi
+if [[ "${has_model}" -eq 0 ]]; then
+  extra_args+=(--model "${CLAUDE_LITELLM_MODEL:-gpt-5.4-mini}")
+fi
+
+exec "${real_claude}" "${extra_args[@]}" "$@"

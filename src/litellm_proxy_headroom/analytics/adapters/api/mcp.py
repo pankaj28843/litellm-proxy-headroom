@@ -46,12 +46,12 @@ def create_analytics_mcp_server(
     session_factory_provider: SessionFactoryProvider,
 ) -> FastMCP:
     mcp = FastMCP(
-        "Headroom Token Compression Analytics",
+        "LiteLLM Compression Analytics",
         mask_error_details=True,
     )
 
     @mcp.tool(
-        name="headroom_analytics_retrieve_chunk",
+        name="litellm_proxy_analytics_retrieve_chunk",
         description="Retrieve a compressed chunk by CCR hash from analytics storage.",
         annotations={
             "readOnlyHint": False,
@@ -68,14 +68,14 @@ def create_analytics_mcp_server(
         telemetry = get_analytics_telemetry()
         started = time.perf_counter()
         attrs = {
-            "headroom.analytics.operation": "mcp_retrieve_chunk",
-            "headroom.analytics.retrieval.source": source,
-            "headroom.analytics.ccr_hash": ccr_hash,
+            "litellm.proxy.analytics.operation": "mcp_retrieve_chunk",
+            "litellm.proxy.analytics.retrieval.source": source,
+            "litellm.proxy.analytics.ccr_hash": ccr_hash,
             "gen_ai.operation.name": "execute_tool",
-            "gen_ai.tool.name": "headroom_analytics_retrieve_chunk",
+            "gen_ai.tool.name": "litellm_proxy_analytics_retrieve_chunk",
             "gen_ai.tool.type": "datastore",
         }
-        with telemetry.start_span("headroom.analytics.mcp.retrieve_chunk", attrs):
+        with telemetry.start_span("litellm.proxy.analytics.mcp.retrieve_chunk", attrs):
             async with session_scope(session_factory_provider()) as session:
                 outcome = await retrieve_chunk_and_record(
                     session,
@@ -109,7 +109,7 @@ def create_analytics_mcp_server(
             )
 
     @mcp.tool(
-        name="headroom_analytics_stats",
+        name="litellm_proxy_analytics_stats",
         description="Return dashboard-ready aggregate analytics counters.",
         annotations={
             "readOnlyHint": True,
@@ -120,11 +120,11 @@ def create_analytics_mcp_server(
     )
     async def stats() -> McpStatsResult:
         with get_analytics_telemetry().start_span(
-            "headroom.analytics.mcp.stats",
+            "litellm.proxy.analytics.mcp.stats",
             {
-                "headroom.analytics.operation": "mcp_stats",
+                "litellm.proxy.analytics.operation": "mcp_stats",
                 "gen_ai.operation.name": "execute_tool",
-                "gen_ai.tool.name": "headroom_analytics_stats",
+                "gen_ai.tool.name": "litellm_proxy_analytics_stats",
                 "gen_ai.tool.type": "datastore",
             },
         ):

@@ -28,6 +28,7 @@ def _record_payload(
     provider_cost: str,
     estimated_baseline_cost: str,
     estimated_after_input_tokens: int,
+    provider_cached_input_tokens: int = 0,
     status: str = "succeeded",
     tenant_id: str | None = None,
     team_id: str | None = None,
@@ -58,12 +59,14 @@ def _record_payload(
     provider_call["model"] = model
     provider_call["cost_total"] = provider_cost
     provider_call["currency"] = "USD"
+    provider_cached_input_tokens = min(provider_cached_input_tokens, compressed_tokens)
+    provider_uncached_input_tokens = compressed_tokens - provider_cached_input_tokens
     provider_call["token_usage"] = [
         {
             "measurement_source": "provider_reported",
             "input_tokens": compressed_tokens,
-            "cached_input_tokens": 0,
-            "newly_processed_input_tokens": compressed_tokens,
+            "cached_input_tokens": provider_cached_input_tokens,
+            "newly_processed_input_tokens": provider_uncached_input_tokens,
             "cache_write_tokens": 0,
             "output_tokens": 40,
             "reasoning_tokens": 5,
@@ -176,6 +179,10 @@ async def _db_spot_check(dsn: str, provider: str) -> asyncpg.Record | None:
                 FROM token_usage_breakdowns tu
                 JOIN selected_calls sc ON sc.id = tu.provider_call_id
                 WHERE tu.measurement_source = 'provider_reported') AS provider_input,
+              (SELECT sum(tu.cached_input_tokens)::int
+                FROM token_usage_breakdowns tu
+                JOIN selected_calls sc ON sc.id = tu.provider_call_id
+                WHERE tu.measurement_source = 'provider_reported') AS provider_cached,
               (SELECT sum(tu.input_tokens)::int
                 FROM token_usage_breakdowns tu
                 JOIN selected_calls sc ON sc.id = tu.provider_call_id
@@ -244,6 +251,7 @@ async def main() -> int:
             provider_cost="0.01000000",
             estimated_baseline_cost="0.02000000",
             estimated_after_input_tokens=620,
+            provider_cached_input_tokens=240,
             tenant_id=tenant_id,
             team_id=team_id,
         ),
@@ -258,6 +266,7 @@ async def main() -> int:
             provider_cost="0.03000000",
             estimated_baseline_cost="0.01600000",
             estimated_after_input_tokens=900,
+            provider_cached_input_tokens=450,
             tenant_id=tenant_id,
             team_id=team_id,
         ),
@@ -272,6 +281,7 @@ async def main() -> int:
             provider_cost="0.00800000",
             estimated_baseline_cost="0.01000000",
             estimated_after_input_tokens=500,
+            provider_cached_input_tokens=50,
             status="failed",
             tenant_id=tenant_id,
             team_id=team_id,
@@ -380,6 +390,7 @@ async def main() -> int:
         return _fail("db_spot_check_missing")
     data = dashboard.json()
     provider_delta = data["provider_estimate_delta"]
+    provider_cache = data["provider_cache"]
     cost = data["cost"]
     distribution = data["savings_distribution"]
     records_data = records.json()
@@ -412,6 +423,23 @@ async def main() -> int:
         return _fail("distribution_bounds_mismatch")
     if provider_delta["provider_reported_input_tokens"] != db_row["provider_input"]:
         return _fail("provider_input_mismatch")
+    if (
+        provider_cache["provider_reported_cached_input_tokens"]
+        != db_row["provider_cached"]
+    ):
+        return _fail("provider_cached_input_mismatch")
+    if provider_cache["provider_reported_cached_input_tokens"] != 740:
+        return _fail("provider_cached_input_unexpected")
+    if provider_cache["provider_reported_uncached_input_tokens"] != 1260:
+        return _fail("provider_uncached_input_unexpected")
+    if provider_cache["provider_cache_hit_percent"] != 37.0:
+        return _fail("provider_cache_hit_mismatch")
+    if provider_cache["cached_input_cost_multiplier"] != "0.10":
+        return _fail("cached_input_multiplier_mismatch")
+    if provider_cache["billing_equivalent_input_tokens"] != 1334.0:
+        return _fail("billing_equivalent_input_mismatch")
+    if provider_cache["billing_equivalent_savings_percent"] != 42.0:
+        return _fail("billing_equivalent_savings_mismatch")
     if provider_delta["estimated_before_provider_input_delta"] != 300:
         return _fail("estimated_before_delta_mismatch")
     if provider_delta["estimated_after_provider_input_delta"] != 20:
@@ -446,13 +474,17 @@ async def main() -> int:
             and surface_name != "partial_simulations"
         ):
             return _fail(f"{surface_name}_missing_marker_record")
+        if surface_name in {"dashboard_html", "partial_live"} and (
+            "Provider cache hit" not in html or "Combined saving" not in html
+        ):
+            return _fail(f"{surface_name}_missing_provider_cache_metrics")
         if SENSITIVE_CONTENT in html or "provider_shape" in html:
             return _fail(f"{surface_name}_leaked_sensitive_content")
     if simulation_command["simulation_key"] not in partial_simulations.text:
         return _fail("partial_simulations_missing_marker")
     if "--surface" not in static_css.text:
         return _fail("static_css_missing_dashboard_rules")
-    if "headroom_analytics_tokens_saved_total" not in metrics.text:
+    if "litellm_proxy_analytics_tokens_saved_total" not in metrics.text:
         return _fail("metrics_missing_tokens_saved")
 
     print(
@@ -462,6 +494,8 @@ async def main() -> int:
         f"negative_savings={data['negative_savings_executions']} "
         f"failed={data['failed_executions']} retrievals={data['retrievals']} "
         f"provider_delta_after={provider_delta['estimated_after_provider_input_delta']} "
+        f"provider_cache_hit={provider_cache['provider_cache_hit_percent']} "
+        f"billing_equivalent_saving={provider_cache['billing_equivalent_savings_percent']} "
         f"cost_savings={cost['estimated_cost_savings']} "
         f"min_saved={distribution['min_tokens_saved']} "
         f"max_saved={distribution['max_tokens_saved']} "

@@ -38,6 +38,21 @@ class ProviderEstimateDelta(BaseModel):
     estimated_after_provider_input_delta: int
 
 
+class ProviderCacheDashboardStats(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    provider_reported_input_tokens: int
+    provider_reported_cached_input_tokens: int
+    provider_reported_uncached_input_tokens: int
+    provider_cache_hit_percent: float | None
+    cached_input_cost_multiplier: str
+    billing_equivalent_input_tokens: float | None
+    billing_equivalent_tokens_saved: float | None
+    billing_equivalent_savings_percent: float | None
+    raw_token_capacity_multiplier: float | None
+    billing_equivalent_capacity_multiplier: float | None
+
+
 class CostDashboardStats(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -76,5 +91,6 @@ class DashboardStats(BaseModel):
     savings_distribution: SavingsDistribution
     latency_distribution: LatencyDistribution
     provider_estimate_delta: ProviderEstimateDelta
+    provider_cache: ProviderCacheDashboardStats
     cost: CostDashboardStats
     cache: CacheDashboardStats

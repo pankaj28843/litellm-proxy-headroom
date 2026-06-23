@@ -26,6 +26,7 @@ from litellm_proxy_headroom.analytics.application.dashboard_schemas import (
     CostDashboardStats,
     DashboardStats,
     LatencyDistribution,
+    ProviderCacheDashboardStats,
     ProviderEstimateDelta,
     SavingsDistribution,
 )
@@ -107,11 +108,15 @@ def test_dashboard_context_contains_template_contract() -> None:
     assert context["database_ready"] is True
     assert context["compression_ratio"] == 0.5
     assert [metric.label for metric in context["summary_metrics"]] == [
-        "Tokens saved",
+        "Combined saving",
+        "Provider cache hit",
+        "Raw tokens saved",
         "Estimated dollars",
-        "Compression ratio",
+        "Billing capacity",
         "Success rate",
     ]
+    assert context["summary_metrics"][0].value == "62.0%"
+    assert context["summary_metrics"][1].value == "30.0%"
     assert [(chip.label, chip.value) for chip in context["filter_chips"]] == [
         ("Provider", "provider-a"),
         ("Model", "model-a"),
@@ -376,6 +381,18 @@ def _stats() -> DashboardStats:
             estimated_after_input_tokens=500,
             estimated_before_provider_input_delta=480,
             estimated_after_provider_input_delta=-20,
+        ),
+        provider_cache=ProviderCacheDashboardStats(
+            provider_reported_input_tokens=520,
+            provider_reported_cached_input_tokens=156,
+            provider_reported_uncached_input_tokens=364,
+            provider_cache_hit_percent=30.0,
+            cached_input_cost_multiplier="0.10",
+            billing_equivalent_input_tokens=379.6,
+            billing_equivalent_tokens_saved=620.4,
+            billing_equivalent_savings_percent=62.04,
+            raw_token_capacity_multiplier=1.923077,
+            billing_equivalent_capacity_multiplier=2.634352,
         ),
         cost=CostDashboardStats(
             measured_provider_cost_total="0.01000000",

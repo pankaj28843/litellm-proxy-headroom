@@ -1,14 +1,16 @@
 # Analytics Backend
 
-This backend is the owned ingress for Headroom compression analytics. LiteLLM
-remains the OpenAI-compatible control plane on port 4000; Headroom runs as a
-library/callback/CCR backend inside that path; the analytics backend owns HTTP
-ingest, CCR retrieval, MCP, stats, metrics, dashboard-ready APIs, simulations,
-and PostgreSQL persistence on port 8010.
+This backend is the owned ingress for compression analytics. LiteLLM remains
+the OpenAI-compatible control plane on port 4000. A small Headroom library
+integration is imported only behind the LiteLLM callback and CCR-compatible
+adapter; the analytics backend owns HTTP ingest, CCR retrieval, MCP, stats,
+metrics, custom dashboard APIs, simulations, and PostgreSQL persistence on
+port 8010.
 
-There is no default Headroom proxy or Headroom MCP container. Do not add one
-unless a future requirement proves the owned LiteLLM plus backend path cannot
-cover the behavior through supported extension points.
+There is no Headroom CLI, `headroom proxy`, Headroom MCP container, Headroom
+dashboard, Headroom API service, or Headroom Compose service in this repo. Do
+not add one. Keep Headroom engagement limited to imported library code behind
+local adapters.
 
 ## Local Setup
 
@@ -44,14 +46,14 @@ curl -fsS http://127.0.0.1:8010/ready
 ## Runtime Topology
 
 ```text
-Open WebUI -> LiteLLM proxy -> Headroom callback/library
+Open WebUI -> LiteLLM proxy -> compression library callback
                               -> bounded analytics HTTP buffer
                               -> analytics backend
                               -> PostgreSQL
 
-Headroom CompressionStoreBackend -> analytics backend CCR endpoints
-MCP clients                      -> analytics backend /mcp/
-Phoenix                          <- LiteLLM and analytics OTel exporters
+Library CompressionStoreBackend -> analytics backend CCR compatibility endpoints
+MCP clients                     -> analytics backend /mcp/
+Phoenix                         <- LiteLLM and analytics OTel exporters
 ```
 
 Core boundaries:
@@ -60,8 +62,8 @@ Core boundaries:
   simulation, and ports. No framework or adapter imports.
 - `analytics/application`: commands, services, read models, buffering, and
   simulation schemas.
-- `analytics/adapters`: FastAPI, FastMCP, LiteLLM, Headroom, PostgreSQL, and
-  OpenTelemetry adapters.
+- `analytics/adapters`: FastAPI, FastMCP, LiteLLM, CCR compatibility,
+  PostgreSQL, and OpenTelemetry adapters.
 
 ## Configuration
 
@@ -71,14 +73,15 @@ Important local variables:
 |---|---|
 | `ANALYTICS_DATABASE_URL` | SQLAlchemy asyncio URL for the analytics PostgreSQL database. |
 | `ANALYTICS_BACKEND_PORT` | Host port for the backend, default `8010`. |
+| `ANALYTICS_CACHED_INPUT_COST_MULTIPLIER` | Billing-equivalent multiplier for provider-reported cached input tokens, default `0.10`. Use this to match current provider pricing without changing stored token rows. OpenAI prompt-cache pricing for current GPT-5.x text classes lists cached input as 10% of uncached input as of 2026-06-23; override this value for other providers, processing tiers, or future pricing changes. |
 | `HEADROOM_ANALYTICS_URL` | Host-side analytics backend URL for scripts and local LiteLLM runs. Compose injects the container URL for LiteLLM. |
 | `HEADROOM_ANALYTICS_TIMEOUT_SECONDS` | Short callback HTTP timeout. Keep this low so analytics does not block model requests. |
 | `HEADROOM_ANALYTICS_BUFFER_SIZE` | Bounded callback queue depth. Full queues drop analytics and increment buffer counters. |
 | `HEADROOM_ANALYTICS_BUFFER_WORKERS` | Async delivery workers for callback ingestion. |
 | `HEADROOM_ANALYTICS_MAX_ATTEMPTS` | Delivery attempts before an event is counted failed. |
 | `HEADROOM_ANALYTICS_PENDING_LIMIT` | Maximum in-memory LiteLLM request captures waiting for a response callback. |
-| `HEADROOM_CCR_BACKEND` | Headroom CCR entry point. Use `analytics-postgres`. |
-| `HEADROOM_CCR_ANALYTICS_TIMEOUT_SECONDS` | Timeout for the Headroom CCR HTTP backend. |
+| `HEADROOM_CCR_BACKEND` | Imported-library CCR entry point. Use `analytics-postgres`. |
+| `HEADROOM_CCR_ANALYTICS_TIMEOUT_SECONDS` | Timeout for the CCR compatibility HTTP backend. |
 | `HEADROOM_CCR_LOCAL_CACHE_ENTRIES` | Per-process CCR read-through cache limit. |
 | `HEADROOM_CCR_TENANT_PREFIX` | Optional tenant prefix for CCR backend metadata. |
 | `HEADROOM_ANALYTICS_OTEL_ENABLED` | Enables backend tracing and metrics setup. |
@@ -89,8 +92,8 @@ Important local variables:
 
 ## Data Flow
 
-LiteLLM loads `config/headroom_litellm_callback.py`, which delegates to
-Headroom's LiteLLM callback and uses a local `agent-90` compression profile.
+LiteLLM loads `config/headroom_litellm_callback.py`, which delegates to the
+imported library callback and uses a local `agent-90` compression profile.
 The adapter captures request correlation, compression measurements, provider
 usage, LiteLLM `response_cost` when available, trace context, and raw provider
 metadata, then submits a normalized command into a bounded async buffer.
@@ -110,8 +113,10 @@ configuration snapshots, executions, chunks, provider calls, token usage,
 cache activity, cost calculations, and retrieval events. Stable query fields
 are normalized; provider-specific payloads stay in JSONB for later replay.
 
-Headroom-compatible CCR storage uses the `analytics-postgres` entry point and
-the supported `CompressionStoreBackend` protocol. It writes and reads through:
+CCR storage uses the `analytics-postgres` entry point and the supported library
+`CompressionStoreBackend` protocol. The `/headroom/ccr/*` paths are internal
+compatibility endpoints owned by this backend, not operator routes and not a
+Headroom service. They write and read through:
 
 ```text
 PUT  /headroom/ccr/{hash}
@@ -147,10 +152,13 @@ Ingest and retrieval:
 
 - `POST /ingest/compression`
 - `GET /chunks/{ccr_hash}`
+- `POST /mcp/`
+
+Internal CCR compatibility routes:
+
 - `PUT /headroom/ccr/{hash}`
 - `GET /headroom/ccr/{hash}`
 - `POST /headroom/ccr/{hash}/retrievals`
-- `POST /mcp/`
 
 Read APIs:
 
@@ -170,8 +178,8 @@ where applicable. Large record reads are paginated.
 ## Dashboard
 
 The custom analytics backend owns `/dashboard`. It does not mount, alias, or
-proxy Headroom's dashboard. LiteLLM stays on port 4000 and Headroom remains a
-library/callback/CCR backend in that request path.
+proxy another dashboard. LiteLLM stays on port 4000 and the compression library
+remains an imported callback/CCR compatibility dependency in that request path.
 
 The dashboard implementation is server-rendered:
 
@@ -202,6 +210,24 @@ Risk, then Investigation, Recent Records, and Simulation Replay. Those panels
 are computed from source rows through the same read models as `/stats/dashboard`,
 `/stats/breakdown`, `/records/compression`, and `/simulations/runs`.
 
+Read the dashboard numbers as recomputed source-row totals:
+
+| Field | Source and meaning |
+|---|---|
+| `requests` | Distinct `compression_requests` rows among matching executions. |
+| `executions` | Matching `compression_executions` rows. |
+| `chunks` | `compression_chunks` rows for matching executions. |
+| `retrievals` | `chunk_retrieval_events` joined through matching chunks. |
+| `original_tokens`, `compressed_tokens`, `tokens_saved` | Sums from `compression_executions`; null measurements become zero in aggregate read models. |
+| Provider token usage | `token_usage_breakdowns` rows with `measurement_source='provider_reported'`, joined through matching provider calls. These fields are independent of compression savings. |
+| Provider cache hit | Provider-reported `cached_input_tokens / input_tokens`. This reflects prompt-cache reuse seen by the upstream provider, not backend cache events. |
+| Billing-equivalent saving | `(estimated_before_input - (provider_uncached_input + provider_cached_input * ANALYTICS_CACHED_INPUT_COST_MULTIPLIER)) / estimated_before_input`. This is a pricing-equivalent input estimate, not a strict raw-token reduction. |
+| Provider estimate deltas | Estimated-before and estimated-after input token rows minus provider-reported input tokens. |
+| Cost fields | Estimated baseline rows from `cost_calculations` compared with measured `provider_calls.cost_total`. |
+| Cache fields | `cache_activities` rows joined to matching executions. |
+| Negative savings | Executions where `tokens_saved < 0`. |
+| Failures | Executions where `status='failed'`; failed rows can still have provider calls and token usage. |
+
 Empty states are truthful. If no persisted compression executions match the
 filters, the page tells the operator to run the dashboard smoke seed or widen
 the range. To create demo evidence without a paid model call:
@@ -230,9 +256,9 @@ Chunk rows support three storage patterns:
 - `inline`: store content directly in PostgreSQL.
 - `external_ref`: store references to content managed elsewhere.
 
-The LiteLLM callback uses `hash_only` by default. Headroom CCR entries store
-content because retrieval needs the compressed chunk payload. Routine record
-detail APIs expose content-present booleans and hashes, not raw provider
+The LiteLLM callback uses `hash_only` by default. CCR compatibility entries may
+store content because retrieval needs the compressed chunk payload. Routine
+record detail APIs expose content-present booleans and hashes, not raw provider
 metadata or chunk content.
 
 The schema includes `retention_policies` and
@@ -286,6 +312,12 @@ For Phoenix, open <http://127.0.0.1:6006> and inspect the
 relationships, timing, service names, and non-sensitive attributes. Do not copy
 prompt, response, original chunk, or compressed chunk content into evidence.
 
+Phoenix groups generic OTLP spans by project resource attributes. The Compose
+backend sets `PHOENIX_PROJECT_NAME=${PHOENIX_PROJECT_NAME:-litellm-proxy-headroom}`,
+and the analytics OTel setup copies that value into
+`openinference.project.name`. Without that project name, Phoenix places spans in
+the `default` project.
+
 Useful log probes:
 
 ```bash
@@ -300,7 +332,7 @@ For analytics changes, prove usefulness before unit tests:
 
 1. Backend readiness and migration head.
 2. Runtime ingest/retrieve/stats/metrics smoke with a unique marker.
-3. Headroom CCR smoke through the supported backend entry point.
+3. CCR compatibility smoke through the supported backend entry point.
 4. LiteLLM callback buffer smoke.
 5. MCP retrieval and metrics smoke.
 6. Dashboard stats and simulation smokes.
@@ -325,8 +357,8 @@ make e2e
 - Dashboard APIs are computed from source tables rather than materialized
   aggregates. This keeps results reproducible and makes pricing recalculation
   possible; add materialized read models later only with refresh provenance.
-- The Headroom CCR adapter uses a synchronous HTTP client because Headroom's
-  current store backend protocol is synchronous. The custom backend itself is
+- The CCR compatibility adapter uses a synchronous HTTP client because the
+  imported store backend protocol is synchronous. The custom backend itself is
   asyncio-first.
 - Automatic retention enforcement, Redis write-through caching, and dashboard
   UI polish are intentionally outside the first useful slice.

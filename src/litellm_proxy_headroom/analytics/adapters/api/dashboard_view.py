@@ -56,7 +56,7 @@ def build_dashboard_context(
         "presets": DASHBOARD_PRESETS,
         "query": query,
         "stats": stats,
-        "summary_metrics": _summary_metrics(stats, compression_ratio),
+        "summary_metrics": _summary_metrics(stats),
         "risk_metrics": _risk_metrics(stats),
         "activity_metrics": _activity_metrics(stats),
         "breakdown_groups": BREAKDOWN_GROUPS,
@@ -71,13 +71,30 @@ def build_dashboard_context(
     }
 
 
-def _summary_metrics(
-    stats: DashboardStats,
-    compression_ratio: float | None,
-) -> list[DashboardMetric]:
+def _summary_metrics(stats: DashboardStats) -> list[DashboardMetric]:
     return [
         DashboardMetric(
-            "Tokens saved",
+            "Combined saving",
+            format_percent(stats.provider_cache.billing_equivalent_savings_percent),
+            f"{format_token_amount(stats.provider_cache.billing_equivalent_input_tokens)} billing-equivalent input",
+            tone=(
+                "success"
+                if (stats.provider_cache.billing_equivalent_savings_percent or 0) >= 50
+                else "warning"
+            ),
+        ),
+        DashboardMetric(
+            "Provider cache hit",
+            format_percent(stats.provider_cache.provider_cache_hit_percent),
+            f"{format_int(stats.provider_cache.provider_reported_cached_input_tokens)} cached input tokens",
+            tone=(
+                "success"
+                if (stats.provider_cache.provider_cache_hit_percent or 0) > 0
+                else "warning"
+            ),
+        ),
+        DashboardMetric(
+            "Raw tokens saved",
             format_int(stats.tokens_saved),
             f"{format_percent(stats.savings_percent)} saved",
             tone="success" if stats.tokens_saved >= 0 else "danger",
@@ -89,9 +106,9 @@ def _summary_metrics(
             tone=_money_tone(stats.cost.estimated_cost_savings),
         ),
         DashboardMetric(
-            "Compression ratio",
-            format_ratio(compression_ratio),
-            f"{format_int(stats.compressed_tokens)} / {format_int(stats.original_tokens)} tokens",
+            "Billing capacity",
+            format_ratio(stats.provider_cache.billing_equivalent_capacity_multiplier),
+            f"{format_ratio(stats.provider_cache.raw_token_capacity_multiplier)} raw-token capacity",
             tone="info",
         ),
         DashboardMetric(
@@ -135,10 +152,18 @@ def _activity_metrics(stats: DashboardStats) -> list[DashboardMetric]:
             tone="info",
         ),
         DashboardMetric(
-            "Cache hits",
+            "Cache events",
             format_int(stats.cache.cache_hit_events),
             f"{format_int(stats.cache.cache_read_events)} reads",
             tone="info",
+        ),
+        DashboardMetric(
+            "Provider cached",
+            format_int(stats.provider_cache.provider_reported_cached_input_tokens),
+            f"{format_int(stats.provider_cache.provider_reported_uncached_input_tokens)} uncached input",
+            tone="success"
+            if stats.provider_cache.provider_reported_cached_input_tokens
+            else "warning",
         ),
         DashboardMetric(
             "Provider delta",
@@ -183,6 +208,15 @@ def format_signed_int(value: int | None) -> str:
 
 def format_float(value: float | None, digits: int = 2) -> str:
     return "n/a" if value is None else f"{value:,.{digits}f}"
+
+
+def format_token_amount(value: float | None) -> str:
+    if value is None:
+        return "n/a"
+    numeric = float(value)
+    if numeric.is_integer():
+        return format_int(int(numeric))
+    return f"{numeric:,.1f}"
 
 
 def format_percent(value: float | None) -> str:

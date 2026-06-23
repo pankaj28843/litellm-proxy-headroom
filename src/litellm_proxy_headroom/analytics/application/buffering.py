@@ -154,7 +154,7 @@ class AsyncIngestionBuffer:
                 self._workers.append(
                     asyncio.create_task(
                         self._worker_loop(index),
-                        name=f"headroom-analytics-buffer-{index}",
+                        name=f"litellm-proxy-analytics-buffer-{index}",
                     )
                 )
         return self._queue

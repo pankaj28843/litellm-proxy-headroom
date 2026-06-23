@@ -157,7 +157,7 @@ def main() -> int:
     if stats_data.get("tokens_saved", 0) < 450:
         print("analytics_smoke=failed stats_tokens_saved_low", file=sys.stderr)
         return 1
-    if "headroom_analytics_tokens_saved_total" not in metrics.text:
+    if "litellm_proxy_analytics_tokens_saved_total" not in metrics.text:
         print("analytics_smoke=failed metrics_missing_tokens_saved", file=sys.stderr)
         return 1
 

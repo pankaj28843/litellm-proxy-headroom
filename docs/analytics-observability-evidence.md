@@ -13,6 +13,11 @@ running unit tests.
 - Phoenix: <http://127.0.0.1:6006>
 - Analytics PostgreSQL: `127.0.0.1:${ANALYTICS_POSTGRES_PORT:-55432}`
 
+Headroom is in scope only as imported library code behind the LiteLLM callback
+and CCR-compatible adapter. Do not run Headroom CLI, `headroom proxy`, Headroom
+MCP, Headroom dashboard, or any Headroom service while gathering evidence for
+this repo.
+
 Do not print ChatGPT OAuth files, LiteLLM master keys, request prompts, model
 responses, original chunks, or compressed chunks unless a task explicitly opts
 into content inspection. The default Compose stack disables GenAI message
@@ -203,16 +208,16 @@ Important artifacts:
   `visual-reasoning-cdp-headed-compact/rework-brief.md`: compactness pass after
   the filter-panel rework.
 
-For headed cdp proof, reuse the existing Headroom tab when possible:
+For headed cdp proof, reuse the existing analytics dashboard tab when possible:
 
 ```bash
 cdp pages --browser-mode headed --json
 cdp --browser-mode headed screenshot \
-  --target <headroom-tab-id> \
+  --target <analytics-dashboard-tab-id> \
   --out tmp/dashboard-evidence/<marker>/cdp-headed-compact-desktop.png \
   --json
 cdp --browser-mode headed console --errors \
-  --target <headroom-tab-id> \
+  --target <analytics-dashboard-tab-id> \
   --wait 2s \
   --limit 0 \
   --json
@@ -265,6 +270,29 @@ Expected evidence:
 - Metric labels stay low-cardinality. Do not add request IDs, chunk hashes,
   trace IDs, raw model responses, or tenant-specific free text as labels.
 
+Interpretation rules:
+
+- `requests` counts distinct `compression_requests` rows among matching
+  executions; `executions` counts matching `compression_executions` rows.
+- `chunks` counts `compression_chunks` rows for those executions.
+- `retrievals` counts `chunk_retrieval_events` joined through those chunks.
+- Compression token totals are summed from execution rows. Failed agent-wrapper
+  attempts or Responses events without a compression measurement can have null
+  per-record token measurements; aggregate APIs coalesce those nulls to zero.
+- Provider usage totals come from `token_usage_breakdowns` rows with
+  `measurement_source='provider_reported'`. They are the provider-call view of
+  the request and should not be treated as compression savings.
+- Provider cache hit comes from provider-reported `cached_input_tokens` divided
+  by provider-reported input tokens. Billing-equivalent input uses
+  `provider_uncached_input + provider_cached_input * ANALYTICS_CACHED_INPUT_COST_MULTIPLIER`
+  and defaults the multiplier to `0.10`. Treat the multiplier as pricing config:
+  it matches current OpenAI GPT-5.x text cached-input ratios as of 2026-06-23,
+  but evidence should record the configured value for the run.
+- `negative_savings_executions` means `tokens_saved < 0`; it is a risk signal,
+  not a failure status.
+- Dashboard cost fields compare measured `provider_calls.cost_total` with
+  estimated `cost_calculations.total_cost`. Missing measured cost stays `null`.
+
 ## Logs
 
 Use logs to connect requests to backend behavior:
@@ -309,6 +337,13 @@ Do not select `original_content` or `compressed_content` for routine evidence.
 Open <http://127.0.0.1:6006> and inspect the configured project
 `litellm-proxy-headroom`.
 
+Phoenix project routing is part of the evidence. Phoenix docs state that traces
+go to a `default` project when no project is specified, and generic OTLP
+exporters can set the project through resource attributes. This stack sets
+`PHOENIX_PROJECT_NAME` for the analytics backend and maps it to
+`openinference.project.name`, so LiteLLM and analytics spans should appear in
+the `litellm-proxy-headroom` project rather than only in `default`.
+
 Current evidence expectations:
 
 - LiteLLM/Open WebUI traces arrive through the existing OTel configuration.
@@ -328,7 +363,7 @@ sets for every relevant smoke run.
 Console or log exporter evidence:
 
 ```bash
-docker compose logs --tail=200 analytics-backend | rg "headroom.analytics|compression|retrieval|provider|persistence|mcp" -C 2
+docker compose logs --tail=200 analytics-backend | rg "litellm.proxy.analytics|compression|retrieval|provider|persistence|mcp" -C 2
 ```
 
 Collector/Phoenix evidence:

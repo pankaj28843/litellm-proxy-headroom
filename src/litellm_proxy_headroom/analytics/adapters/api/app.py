@@ -35,7 +35,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 def create_app() -> FastAPI:
     configure_otel_from_env()
     app = FastAPI(
-        title="Headroom Token Compression Analytics",
+        title="LiteLLM Compression Analytics",
         version="0.1.0",
         lifespan=lifespan,
     )

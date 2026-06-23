@@ -49,12 +49,12 @@ async def main() -> int:
         async with Client(f"{backend_url}/mcp/") as mcp:
             tools = await mcp.list_tools()
             tool_names = {tool.name for tool in tools}
-            if "headroom_analytics_retrieve_chunk" not in tool_names:
+            if "litellm_proxy_analytics_retrieve_chunk" not in tool_names:
                 raise RuntimeError(
-                    "headroom_analytics_retrieve_chunk missing from MCP tools"
+                    "litellm_proxy_analytics_retrieve_chunk missing from MCP tools"
                 )
             result = await mcp.call_tool(
-                "headroom_analytics_retrieve_chunk",
+                "litellm_proxy_analytics_retrieve_chunk",
                 {"ccr_hash": ccr_hash, "source": "mcp-smoke"},
                 timeout=10.0,
             )
@@ -73,7 +73,7 @@ async def main() -> int:
     if after.get("retrievals", 0) <= before.get("retrievals", 0):
         print("mcp_otel_smoke=failed retrieval_count_did_not_increase", file=sys.stderr)
         return 1
-    if "headroom_analytics_retrievals_total" not in metrics.text:
+    if "litellm_proxy_analytics_retrievals_total" not in metrics.text:
         print("mcp_otel_smoke=failed metrics_missing_retrievals", file=sys.stderr)
         return 1
 

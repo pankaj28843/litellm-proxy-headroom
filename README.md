@@ -15,15 +15,17 @@ uv run litellm --config config/litellm.yaml --host 127.0.0.1 --port 4000
 ```
 
 The LiteLLM config uses ChatGPT's `chatgpt/` provider route and a config-local
-callback shim, `config/headroom_litellm_callback.py`, which wraps Headroom's
-compression callback and posts analytics to the custom backend.
+callback shim, `config/headroom_litellm_callback.py`, which imports Headroom
+library code for compression and posts analytics to the custom backend.
 On a machine without existing ChatGPT device credentials, LiteLLM prompts for
 the ChatGPT OAuth device flow during startup.
 
-The Headroom proxy container is not part of the default runtime. Headroom remains
-an installed library dependency for compression callbacks and CCR compatibility
-adapters; the owned LiteLLM proxy, analytics backend, PostgreSQL storage, and
-custom MCP endpoint are the control plane.
+This repository does not operate Headroom as a product surface: no Headroom CLI,
+`headroom proxy`, Headroom MCP server, Headroom dashboard, route alias, or
+Compose service belongs here. Headroom remains an installed library dependency
+for the compression callback and CCR-compatible adapter; the owned LiteLLM
+proxy, analytics backend, PostgreSQL storage, and custom MCP endpoint are the
+control plane.
 
 ## Check
 
@@ -68,7 +70,7 @@ Smoke the backend ingress/retrieval/stats/metrics path:
 uv run python scripts/e2e_analytics_smoke.py
 ```
 
-Smoke Headroom's supported CCR backend contract against the analytics backend:
+Smoke the CCR compatibility contract used by the imported compression library:
 
 ```bash
 HEADROOM_ANALYTICS_URL=http://127.0.0.1:8010 \
@@ -117,18 +119,18 @@ uv run python scripts/e2e_simulation_smoke.py
 
 The analytics package is split into a framework-free domain layer,
 application commands, and PostgreSQL adapters under
-`src/litellm_proxy_headroom/analytics/`. API, LiteLLM callback, Headroom CCR,
-and OTel adapters are layered around those modules.
+`src/litellm_proxy_headroom/analytics/`. API, LiteLLM callback, CCR
+compatibility, and OTel adapters are layered around those modules.
 
-Headroom-compatible CCR code can use the analytics backend through the plugin
-entry point when a library path needs the `CompressionStoreBackend` protocol:
+Imported library code can use the analytics backend through the plugin entry
+point when a path needs the `CompressionStoreBackend` protocol:
 
 ```bash
 HEADROOM_CCR_BACKEND=analytics-postgres
 HEADROOM_ANALYTICS_URL=http://analytics-backend:8010
 ```
 
-The plugin implements Headroom's `CompressionStoreBackend` protocol and sends
+The plugin implements the library `CompressionStoreBackend` protocol and sends
 CCR store/retrieve activity to the custom backend over bounded HTTP. It does
 not write directly to PostgreSQL.
 
@@ -180,6 +182,38 @@ Dashboard/read APIs are exposed by the custom backend:
 - `GET /simulations/runs` and `GET /simulations/runs/{simulation_key}` for
   simulation summaries and results.
 
+Read the numbers as recomputed source-row totals, not cached dashboard state:
+
+- `requests` is the count of distinct compression request rows among matching
+  executions.
+- `executions` is the count of compression execution rows. A failed provider
+  attempt can still create an execution row.
+- `chunks` is the count of chunk rows for those executions.
+- `retrievals` is the count of retrieval events joined through matching chunk
+  rows.
+- `original_tokens`, `compressed_tokens`, and `tokens_saved` are sums from
+  compression execution rows. They can be null or zero for routes where no
+  compression measurement was produced.
+- Provider usage fields such as `provider_input_tokens`,
+  `provider_output_tokens`, cached input, and reasoning tokens come from
+  provider token usage rows and are separate from compression savings.
+- Provider cache hit comes from provider-reported `cached_input_tokens` divided
+  by provider-reported input tokens. This is different from backend cache-event
+  counts and is the signal for API billing-equivalent savings.
+- `Combined saving` uses billing-equivalent input:
+  `uncached_provider_input + cached_provider_input * cached_input_multiplier`,
+  compared with estimated-before input tokens. The default cached-input
+  multiplier is `0.10` for the current OpenAI GPT-5.x text cached-input
+  pricing ratio as of 2026-06-23 and can be overridden with
+  `ANALYTICS_CACHED_INPUT_COST_MULTIPLIER` when the provider, tier, or pricing
+  changes.
+- `negative_savings_executions` counts executions where compression expanded
+  token count. `cost_increase_provider_calls` counts provider calls where the
+  measured cost exceeded the estimated baseline.
+- Dashboard cost fields compare `provider_calls.cost_total` with estimated
+  rows in `cost_calculations`; missing provider cost stays `null` rather than
+  becoming a fake zero-dollar value.
+
 ## Docker Compose
 
 The default operator path is:
@@ -213,6 +247,49 @@ make down
 make check
 ```
 
+## Agent CLI Wrappers
+
+Use the repo-owned wrappers when running agent CLIs through this LiteLLM stack:
+
+```bash
+./bin/codex-litellm --help
+./bin/codex-litellm exec "reply with a short health marker"
+
+./bin/claude-litellm --help
+./bin/claude-litellm --print --verbose --output-format stream-json \
+  "reply with a short health marker"
+```
+
+Both wrappers read `.env`, do not print secret values, and generate non-secret
+runtime config under `tmp/`. To put them on your PATH without changing global
+agent config, symlink the wrapper names:
+
+```bash
+ln -sf "$PWD/bin/codex-litellm" "$HOME/.local/bin/codex-litellm"
+ln -sf "$PWD/bin/claude-litellm" "$HOME/.local/bin/claude-litellm"
+```
+
+`bin/codex-litellm` sets a repo-owned `CODEX_HOME`, configures the LiteLLM
+Responses provider at `http://127.0.0.1:4000/v1`, and adds the analytics MCP
+endpoint.
+
+`bin/claude-litellm` sets Claude Code's LiteLLM gateway environment, limits
+settings to project scope so user `apiKeyHelper` config does not bypass
+LiteLLM, and passes a repo-owned analytics MCP config. With the current
+ChatGPT-backed model aliases, Claude Code reaches LiteLLM and analytics but
+can receive a 400 from the model group because Claude Code sends system
+messages and the current ChatGPT provider path rejects them.
+
+Version/source-surface: TechDocs tenants `openai-codex-docs` from
+<https://developers.openai.com>, `litellm` from <https://docs.litellm.ai>, and
+`anthropic-claude-docs` from <https://claude.com> / <https://platform.claude.com>
+were fetched on 2026-06-23; local dependencies are `litellm[proxy]` and
+`headroom-ai==0.27.0`, while CLI versions are host-installed. The wrapper
+contract follows those docs: Codex provider/auth config lives under
+`CODEX_HOME` and uses `base_url`, `env_key`, and `wire_api = "responses"`;
+Claude Code routes through LiteLLM with `ANTHROPIC_BASE_URL`,
+`ANTHROPIC_AUTH_TOKEN`, `/v1/messages`, and gateway model discovery.
+
 ChatGPT OAuth is persistent via `./data/chatgpt:/data/chatgpt` and
 `CHATGPT_TOKEN_DIR=/data/chatgpt`. If the sibling
 `../litellm-proxy/data/chatgpt/auth.json` exists, `make auth-import` copies it
@@ -227,13 +304,18 @@ continues to expose `/dashboard`, `/health`, `/ready`, `/stats`, `/metrics`,
 `/stats/dashboard`, `/records/compression`, `/simulations/runs`, and `/mcp/`
 independently.
 
-## Headroom Callback
+## Compression Library Callback Boundary
 
 The LiteLLM config uses `config/headroom_litellm_callback.py` as a small
 Headroom v0.27.0 compatibility shim. It keeps LiteLLM's class callback loading
 working and selects Headroom's built-in `agent-90` local compression profile.
 The default stack leaves `HEADROOM_API_KEY` unset, so no extra profile-specific
 environment variable is required.
+
+This callback shim is the entire Headroom boundary. Do not add Headroom
+CLI/proxy/MCP or dashboard workflows to this repository; add only local adapter
+code that imports documented library surfaces needed by LiteLLM or CCR
+compatibility.
 
 ## Codex Models
 

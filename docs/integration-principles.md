@@ -1,8 +1,9 @@
 # Integration Principles
 
 This repository should stay a deployment harness around an owned LiteLLM proxy,
-the local Headroom compression library integration, Open WebUI, Phoenix, and
-the custom analytics backend.
+Open WebUI, Phoenix, the custom analytics backend, and a small imported
+compression-library integration. Headroom is an implementation dependency, not
+an operator-facing service in this repository.
 
 ## Architecture
 
@@ -17,25 +18,29 @@ Run upstream applications at their documented roots:
   for `/dashboard`, `/health`, `/ready`, `/stats`, `/stats/breakdown`,
   `/stats/dashboard`, `/records/compression`, `/simulations/runs`, `/metrics`,
   storage-backed CCR compatibility endpoints, and `/mcp/`.
-- Headroom is not a default Compose service. Keep it as an installed library for
-  the LiteLLM callback and `CompressionStoreBackend` compatibility adapter.
+- Headroom is not a Compose service, CLI, proxy, dashboard, MCP server, or route
+  owner. Keep it as an installed library for the LiteLLM callback and
+  `CompressionStoreBackend` compatibility adapter.
 
-Do not add a separate Headroom proxy or Headroom MCP container unless a future
-requirement proves the custom LiteLLM/backend/MCP path cannot cover the needed
-behavior through supported APIs.
+Do not add or run Headroom CLI, `headroom proxy`, Headroom MCP, Headroom
+dashboard, Headroom API service, route aliases to Headroom surfaces, or
+Headroom Compose containers. If a future requirement cannot be met by
+LiteLLM configuration, this repo's analytics backend, or local library
+adapters, handle that as a separate architecture decision instead of expanding
+Headroom's footprint here.
 
 ## Upgrade Rule
 
 Do not patch Headroom templates, mutate LiteLLM route tables, or monkeypatch
-LiteLLM/Headroom internals. Use LiteLLM YAML callbacks, Headroom's callback and
-CCR backend extension points, FastAPI routes, FastMCP, Compose configuration,
-and environment variables.
+LiteLLM/Headroom internals. Use LiteLLM YAML callbacks, documented library
+callback and CCR backend extension points, this repo's FastAPI routes, FastMCP,
+Compose configuration, and environment variables.
 
-Do not reintroduce a Headroom proxy service unless a replacement topology is
-validated against the same behavior: loading `config/litellm.yaml`, using the
-persisted ChatGPT OAuth auth file, accepting the Open WebUI API key as a local
-proxy key, preserving Phoenix tracing callbacks, sending analytics to the
-backend, and serving retrieval through custom MCP.
+Do not reintroduce a Headroom proxy service. The validated runtime topology is
+the owned LiteLLM proxy loading `config/litellm.yaml`, using the persisted
+ChatGPT OAuth auth file, accepting the Open WebUI API key as a local proxy key,
+preserving Phoenix tracing callbacks, sending analytics to the backend, and
+serving retrieval through the custom MCP endpoint.
 
 Usefulness comes before unit tests. Validate the deployed behavior first with
 runtime evidence: LiteLLM `/health`, `/v1/models` and chat completions through
@@ -62,21 +67,21 @@ The shim's only behavior change is local compression profile selection. When
 new environment variables for this profile unless Headroom exposes a documented
 callback configuration surface that needs them.
 
-The default Compose stack intentionally does not run a Headroom proxy container.
-The owned LiteLLM proxy serves `/v1/*`; the analytics backend serves dashboard,
-filtered stats, records, metrics, CCR compatibility, and MCP.
+The default Compose stack intentionally does not run any Headroom service. The
+owned LiteLLM proxy serves `/v1/*`; the analytics backend serves the custom
+dashboard, filtered stats, records, metrics, CCR compatibility, and MCP.
 
 ## Current Analytics Topology
 
 The analytics backend is the ingress for compression activity, CCR storage,
 retrieval accounting, stats, metrics, and dashboard-ready APIs. LiteLLM and
-Headroom adapters talk to it over bounded HTTP; they do not write directly to
-PostgreSQL.
+library compatibility adapters talk to it over bounded HTTP; they do not write
+directly to PostgreSQL.
 
 The current runtime keeps LiteLLM as the public localhost OpenAI-compatible
-endpoint. Headroom compression runs inside the LiteLLM callback path as a
-library integration; the analytics backend owns storage, retrieval accounting,
-stats, metrics, dashboard-ready APIs, and MCP.
+endpoint. Compression runs inside the LiteLLM callback path as a library
+integration; the analytics backend owns storage, retrieval accounting, stats,
+metrics, dashboard-ready APIs, and MCP.
 
 Dashboard-ready query APIs and simulation outputs are read models over source
 tables. Dashboard stats must remain recomputable from request, execution,
@@ -85,10 +90,9 @@ becoming mutable aggregate totals. Simulation results must be stored separately
 from production executions and only link back to source request/execution/chunk
 IDs.
 
-Do not implement a Headroom proxy extension for analytics unless a future
-topology intentionally puts Headroom proxy back in path and the existing
-callback plus CCR backend cannot observe the required behavior through supported
-APIs.
+Do not implement a Headroom proxy extension for analytics. The supported
+integration boundary is the callback plus CCR-compatible backend adapter, both
+used as library integrations.
 
 ## Analytics Implementation Discipline
 

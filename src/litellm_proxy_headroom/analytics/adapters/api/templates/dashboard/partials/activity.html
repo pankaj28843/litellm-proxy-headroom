@@ -36,6 +36,14 @@
         <dd>{{ stats.provider_estimate_delta.provider_reported_input_tokens|integer }}</dd>
       </div>
       <div>
+        <dt>Provider cached input</dt>
+        <dd>{{ stats.provider_cache.provider_reported_cached_input_tokens|integer }}</dd>
+      </div>
+      <div>
+        <dt>Provider cache hit</dt>
+        <dd>{{ stats.provider_cache.provider_cache_hit_percent|percent }}</dd>
+      </div>
+      <div>
         <dt>Estimated before delta</dt>
         <dd>{{ stats.provider_estimate_delta.estimated_before_provider_input_delta|signed_integer }}</dd>
       </div>
@@ -56,6 +64,14 @@
       <div>
         <dt>Cache tokens written</dt>
         <dd>{{ stats.cache.cache_tokens_written|integer }}</dd>
+      </div>
+      <div>
+        <dt>Billing-equivalent input</dt>
+        <dd>{{ stats.provider_cache.billing_equivalent_input_tokens|float }} tokens</dd>
+      </div>
+      <div>
+        <dt>Cached input multiplier</dt>
+        <dd>{{ stats.provider_cache.cached_input_cost_multiplier }}x</dd>
       </div>
     </dl>
   </div>

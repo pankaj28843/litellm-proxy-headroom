@@ -43,35 +43,35 @@ def _token_values(
 
 class AnalyticsTelemetry:
     def __init__(self) -> None:
-        meter = metrics.get_meter("litellm_proxy_headroom.analytics")
-        self._tracer = trace.get_tracer("litellm_proxy_headroom.analytics")
+        meter = metrics.get_meter("litellm_proxy.analytics")
+        self._tracer = trace.get_tracer("litellm_proxy.analytics")
         self._compression_duration = meter.create_histogram(
-            "headroom.analytics.compression.duration",
+            "litellm.proxy.analytics.compression.duration",
             unit="ms",
             description="Compression execution duration.",
         )
         self._compression_original_tokens = meter.create_histogram(
-            "headroom.analytics.compression.original_tokens",
+            "litellm.proxy.analytics.compression.original_tokens",
             unit="{token}",
             description="Original tokens before compression.",
         )
         self._compression_compressed_tokens = meter.create_histogram(
-            "headroom.analytics.compression.compressed_tokens",
+            "litellm.proxy.analytics.compression.compressed_tokens",
             unit="{token}",
             description="Compressed tokens after compression.",
         )
         self._compression_tokens_saved = meter.create_histogram(
-            "headroom.analytics.compression.tokens_saved",
+            "litellm.proxy.analytics.compression.tokens_saved",
             unit="{token}",
             description="Tokens saved by compression.",
         )
         self._compression_ratio = meter.create_histogram(
-            "headroom.analytics.compression.ratio",
+            "litellm.proxy.analytics.compression.ratio",
             unit="1",
             description="Compression ratio per execution.",
         )
         self._compression_failures = meter.create_counter(
-            "headroom.analytics.compression.failures",
+            "litellm.proxy.analytics.compression.failures",
             unit="{failure}",
             description="Compression failures observed by analytics.",
         )
@@ -81,42 +81,42 @@ class AnalyticsTelemetry:
             description="Provider-reported GenAI token usage.",
         )
         self._cache_operations = meter.create_counter(
-            "headroom.analytics.cache.operations",
+            "litellm.proxy.analytics.cache.operations",
             unit="{operation}",
             description="Cache read/write activity observed by analytics.",
         )
         self._cache_tokens = meter.create_histogram(
-            "headroom.analytics.cache.tokens",
+            "litellm.proxy.analytics.cache.tokens",
             unit="{token}",
             description="Tokens read from or written to caches.",
         )
         self._persistence_latency = meter.create_histogram(
-            "headroom.analytics.persistence.latency",
+            "litellm.proxy.analytics.persistence.latency",
             unit="ms",
             description="Analytics persistence latency.",
         )
         self._persistence_failures = meter.create_counter(
-            "headroom.analytics.persistence.failures",
+            "litellm.proxy.analytics.persistence.failures",
             unit="{failure}",
             description="Analytics persistence failures.",
         )
         self._retrieval_latency = meter.create_histogram(
-            "headroom.analytics.retrieval.latency",
+            "litellm.proxy.analytics.retrieval.latency",
             unit="ms",
             description="Compressed chunk retrieval latency.",
         )
         self._retrieval_results = meter.create_counter(
-            "headroom.analytics.retrieval.results",
+            "litellm.proxy.analytics.retrieval.results",
             unit="{result}",
             description="Compressed chunk retrieval outcomes.",
         )
         self._retrieval_failures = meter.create_counter(
-            "headroom.analytics.retrieval.failures",
+            "litellm.proxy.analytics.retrieval.failures",
             unit="{failure}",
             description="Compressed chunk retrieval failures.",
         )
         self._buffer_depth = meter.create_histogram(
-            "headroom.analytics.buffer.depth",
+            "litellm.proxy.analytics.buffer.depth",
             unit="{item}",
             description="LiteLLM analytics buffer depth snapshots.",
         )
@@ -142,8 +142,8 @@ class AnalyticsTelemetry:
         status = "ok" if success else "error"
         persistence_attrs = _attrs(
             **{
-                "headroom.analytics.operation": "ingest",
-                "headroom.analytics.status": status,
+                "litellm.proxy.analytics.operation": "ingest",
+                "litellm.proxy.analytics.status": status,
             }
         )
         self._persistence_latency.record(latency_ms, persistence_attrs)
@@ -153,8 +153,8 @@ class AnalyticsTelemetry:
         execution = command.execution
         compression_attrs = _attrs(
             **{
-                "headroom.analytics.strategy": command.config.strategy_name,
-                "headroom.analytics.status": execution.status,
+                "litellm.proxy.analytics.strategy": command.config.strategy_name,
+                "litellm.proxy.analytics.status": execution.status,
             }
         )
         if execution.duration_ms is not None:
@@ -195,9 +195,9 @@ class AnalyticsTelemetry:
         for activity in command.cache_activities:
             cache_attrs = _attrs(
                 **{
-                    "headroom.analytics.cache.system": activity.cache_system,
-                    "headroom.analytics.cache.operation": activity.operation,
-                    "headroom.analytics.cache.hit": activity.hit,
+                    "litellm.proxy.analytics.cache.system": activity.cache_system,
+                    "litellm.proxy.analytics.cache.operation": activity.operation,
+                    "litellm.proxy.analytics.cache.hit": activity.hit,
                 }
             )
             self._cache_operations.add(1, cache_attrs)
@@ -215,9 +215,9 @@ class AnalyticsTelemetry:
     ) -> None:
         attrs = _attrs(
             **{
-                "headroom.analytics.operation": operation,
-                "headroom.analytics.retrieval.source": source,
-                "headroom.analytics.retrieval.result": "found"
+                "litellm.proxy.analytics.operation": operation,
+                "litellm.proxy.analytics.retrieval.source": source,
+                "litellm.proxy.analytics.retrieval.result": "found"
                 if found
                 else "not_found",
             }
@@ -238,7 +238,7 @@ class AnalyticsTelemetry:
         if current_depth is not None:
             self._buffer_depth.record(
                 int(current_depth),
-                {"headroom.analytics.buffer.name": "litellm_callback"},
+                {"litellm.proxy.analytics.buffer.name": "litellm_callback"},
             )
 
 

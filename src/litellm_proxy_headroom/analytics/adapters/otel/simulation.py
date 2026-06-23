@@ -7,19 +7,19 @@ from opentelemetry import metrics
 
 class SimulationTelemetry:
     def __init__(self) -> None:
-        meter = metrics.get_meter("litellm_proxy_headroom.analytics.simulation")
+        meter = metrics.get_meter("litellm_proxy.analytics.simulation")
         self._duration = meter.create_histogram(
-            "headroom.analytics.simulation.duration",
+            "litellm.proxy.analytics.simulation.duration",
             unit="ms",
             description="Historical simulation run duration.",
         )
         self._result_count = meter.create_histogram(
-            "headroom.analytics.simulation.results",
+            "litellm.proxy.analytics.simulation.results",
             unit="{result}",
             description="Historical simulation result count.",
         )
         self._failures = meter.create_counter(
-            "headroom.analytics.simulation.failures",
+            "litellm.proxy.analytics.simulation.failures",
             unit="{failure}",
             description="Historical simulation failures.",
         )
@@ -31,7 +31,7 @@ class SimulationTelemetry:
         result_count: int,
         status: str,
     ) -> None:
-        attrs = {"headroom.analytics.simulation.status": status}
+        attrs = {"litellm.proxy.analytics.simulation.status": status}
         self._duration.record(duration_ms, attrs)
         self._result_count.record(result_count, attrs)
         if status != "succeeded":

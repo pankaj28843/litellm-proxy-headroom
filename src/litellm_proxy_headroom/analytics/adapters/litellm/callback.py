@@ -48,6 +48,7 @@ class CompressionCapture:
     request_key: str
     event_key: str
     model: str
+    incoming_route: str | None
     tokens_before: int | None
     tokens_after: int | None
     tokens_saved: int | None
@@ -62,6 +63,34 @@ class CompressionCapture:
 def _stable_hash(value: Any) -> str:
     encoded = json.dumps(value, sort_keys=True, default=str).encode()
     return hashlib.sha256(encoded).hexdigest()
+
+
+def _bounded_identifier(
+    value: str | None, prefix: str, max_length: int = 255
+) -> str | None:
+    if not value:
+        return None
+    if len(value) <= max_length:
+        return value
+    digest = _stable_hash(value)[:48]
+    bounded = f"{prefix}:{digest}"
+    return bounded[:max_length]
+
+
+def _event_key(request_key: str, idempotency_key: str, status: str) -> str:
+    candidate = f"{request_key}:{idempotency_key}:{status}"
+    if len(candidate) <= 255:
+        return candidate
+
+    digest = _stable_hash(
+        {
+            "request_key": request_key,
+            "idempotency_key": idempotency_key,
+            "status": status,
+        }
+    )[:48]
+    suffix = f":{digest}:{status}"
+    return f"{request_key[: 255 - len(suffix)]}{suffix}"
 
 
 def _metadata(container: dict[str, Any]) -> dict[str, Any]:
@@ -79,10 +108,40 @@ def _metadata(container: dict[str, Any]) -> dict[str, Any]:
     return {}
 
 
+def _incoming_route_from_data(data: dict[str, Any]) -> str | None:
+    metadata = _metadata(data)
+    for key in ("incoming_route", "route", "path", "request_path"):
+        value = metadata.get(key) or data.get(key)
+        if value:
+            return str(value)
+    if data.get("input") is not None and data.get("messages") is None:
+        return "/v1/responses"
+    if data.get("messages") is not None:
+        return "/v1/chat/completions"
+    return None
+
+
+def _incoming_route_from_response(
+    incoming_route: str | None, response: Any, response_key: str | None
+) -> str | None:
+    if incoming_route != "/v1/chat/completions":
+        return incoming_route
+    response_object = (
+        response.get("object")
+        if isinstance(response, dict)
+        else getattr(response, "object", None)
+    )
+    if response_object == "response":
+        return "/v1/responses"
+    if response_key and response_key.startswith("resp_"):
+        return "/v1/responses"
+    return incoming_route
+
+
 def _request_key_from_data(data: dict[str, Any]) -> str:
     metadata = _metadata(data)
     for key in (
-        "headroom_analytics_request_key",
+        "litellm_proxy_analytics_request_key",
         "request_id",
         "litellm_call_id",
         "trace_id",
@@ -101,12 +160,12 @@ def _ensure_request_key(data: dict[str, Any]) -> str:
         metadata = {}
         data["metadata"] = metadata
 
-    existing = metadata.get("headroom_analytics_request_key")
+    existing = metadata.get("litellm_proxy_analytics_request_key")
     if existing:
         return str(existing)
 
     request_key = _request_key_from_data(data)
-    metadata["headroom_analytics_request_key"] = request_key
+    metadata["litellm_proxy_analytics_request_key"] = request_key
     return request_key
 
 
@@ -259,6 +318,8 @@ class HeadroomAnalyticsCallback(_HeadroomLiteLLMCallback, CustomLogger):
         )
         capture = self._pop_capture(kwargs)
         if capture is None:
+            capture = self._post_call_capture(kwargs)
+        if capture is None:
             return
         await self._post_capture(
             capture,
@@ -278,6 +339,8 @@ class HeadroomAnalyticsCallback(_HeadroomLiteLLMCallback, CustomLogger):
             self, kwargs, response, start_time, end_time
         )
         capture = self._pop_capture(kwargs)
+        if capture is None:
+            capture = self._post_call_capture(kwargs)
         if capture is None:
             return
         await self._post_capture(
@@ -395,6 +458,7 @@ class HeadroomAnalyticsCallback(_HeadroomLiteLLMCallback, CustomLogger):
             request_key=request_key,
             event_key=f"{request_key}:compression:{int(time.time() * 1000)}",
             model=model,
+            incoming_route=_incoming_route_from_data(data),
             tokens_before=tokens_before,
             tokens_after=tokens_after,
             tokens_saved=tokens_saved,
@@ -423,7 +487,7 @@ class HeadroomAnalyticsCallback(_HeadroomLiteLLMCallback, CustomLogger):
         self._pending[capture.request_key] = capture
 
     def _pop_capture(self, kwargs: dict[str, Any]) -> CompressionCapture | None:
-        request_key = _metadata(kwargs).get("headroom_analytics_request_key")
+        request_key = _metadata(kwargs).get("litellm_proxy_analytics_request_key")
         if request_key:
             capture = self._pending.pop(str(request_key), None)
             if capture is not None:
@@ -446,14 +510,18 @@ class HeadroomAnalyticsCallback(_HeadroomLiteLLMCallback, CustomLogger):
         if buffer is None:
             return
 
-        response_key = response_id(response)
+        raw_response_key = response_id(response)
+        response_key = _bounded_identifier(raw_response_key, "response")
+        incoming_route = _incoming_route_from_response(
+            capture.incoming_route, response, response_key
+        )
         provider_call = self._provider_call(capture, response, status, duration_ms)
         idempotency_key = response_key or capture.content_hash
         command = CompressionActivityIngestCommand(
             event=IngestionEventCommand(
                 source="litellm-headroom-callback",
                 event_type="compression_result",
-                event_key=f"{capture.request_key}:{idempotency_key}:{status}",
+                event_key=_event_key(capture.request_key, idempotency_key, status),
                 raw_payload={
                     "model": capture.model,
                     "status": status,
@@ -464,7 +532,7 @@ class HeadroomAnalyticsCallback(_HeadroomLiteLLMCallback, CustomLogger):
             request=CompressionRequestCommand(
                 request_key=capture.request_key,
                 source_system="litellm-proxy",
-                incoming_route="/v1/chat/completions",
+                incoming_route=incoming_route,
                 model_hint=capture.model,
                 trace=capture.trace,
             ),
@@ -515,9 +583,11 @@ class HeadroomAnalyticsCallback(_HeadroomLiteLLMCallback, CustomLogger):
         duration_ms: int | None,
     ) -> ProviderCallCommand | None:
         usage = token_usage_from_response(response)
-        response_key = response_id(response)
+        response_key = _bounded_identifier(response_id(response), "response")
         cost_total = response_cost(response)
-        provider_call_key = response_key or f"{capture.request_key}:provider"
+        provider_call_key = response_key or _bounded_identifier(
+            f"{capture.request_key}:provider", "provider"
+        )
         provider = capture.model.split("/", 1)[0] if "/" in capture.model else "unknown"
         return ProviderCallCommand(
             provider_call_key=provider_call_key,

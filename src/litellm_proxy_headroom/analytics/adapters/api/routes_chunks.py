@@ -19,11 +19,11 @@ async def get_chunk(
 ) -> RetrievedChunkResponse | JSONResponse:
     telemetry = get_analytics_telemetry()
     with telemetry.start_span(
-        "headroom.analytics.retrieve_chunk",
+        "litellm.proxy.analytics.retrieve_chunk",
         {
-            "headroom.analytics.operation": "retrieve_chunk",
-            "headroom.analytics.retrieval.source": source,
-            "headroom.analytics.ccr_hash": ccr_hash,
+            "litellm.proxy.analytics.operation": "retrieve_chunk",
+            "litellm.proxy.analytics.retrieval.source": source,
+            "litellm.proxy.analytics.ccr_hash": ccr_hash,
         },
     ):
         outcome = await retrieve_chunk_and_record(

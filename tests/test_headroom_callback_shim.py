@@ -3,7 +3,7 @@ import importlib.util
 from pathlib import Path
 
 
-def load_shim_callback() -> type:
+def load_shim_module():
     spec = importlib.util.spec_from_file_location(
         "headroom_litellm_callback",
         Path("config/headroom_litellm_callback.py"),
@@ -12,7 +12,11 @@ def load_shim_callback() -> type:
     assert spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    return module.HeadroomCallback
+    return module
+
+
+def load_shim_callback() -> type:
+    return load_shim_module().HeadroomCallback
 
 
 def test_headroom_callback_shim_exposes_litellm_post_call_hooks() -> None:
@@ -39,32 +43,18 @@ def test_headroom_callback_shim_post_call_hooks_are_noops() -> None:
     assert failure_result is None
 
 
-def test_headroom_callback_shim_post_call_hooks_work_when_loaded_as_class() -> None:
-    callback_cls = load_shim_callback()
+def test_headroom_callback_shim_exports_litellm_config_instance() -> None:
+    module = load_shim_module()
 
-    success_result = asyncio.run(
-        callback_cls.async_post_call_success_hook({}, None, {"choices": []})
-    )
-    failure_result = asyncio.run(
-        callback_cls.async_post_call_failure_hook({}, RuntimeError("boom"), None)
-    )
-
-    assert success_result is None
-    assert failure_result is None
+    assert isinstance(module.headroom_callback, module.HeadroomCallback)
+    assert hasattr(module.headroom_callback, "async_pre_call_hook")
+    assert "headroom_callback" in module.__all__
 
 
 def test_local_compression_uses_agent_90_profile(monkeypatch) -> None:
     from types import SimpleNamespace
 
-    spec = importlib.util.spec_from_file_location(
-        "headroom_litellm_callback",
-        Path("config/headroom_litellm_callback.py"),
-    )
-    assert spec is not None
-    assert spec.loader is not None
-
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    module = load_shim_module()
 
     captured = {}
 
@@ -79,13 +69,13 @@ def test_local_compression_uses_agent_90_profile(monkeypatch) -> None:
             transforms_applied=["fake"],
         )
 
-    monkeypatch.setattr(module, "compress", fake_compress)
+    from litellm_proxy_headroom.analytics.adapters.litellm import callback
 
-    result = asyncio.run(
-        module.HeadroomCallback()._local_compress(
-            [{"role": "user", "content": "large prompt"}],
-            "chatgpt",
-        )
+    monkeypatch.setattr(callback, "compress", fake_compress)
+
+    result = module.HeadroomCallback()._local_compress(
+        [{"role": "user", "content": "large prompt"}],
+        "chatgpt",
     )
 
     assert captured["config"].savings_profile == "agent-90"

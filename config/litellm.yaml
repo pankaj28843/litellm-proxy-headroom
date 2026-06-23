@@ -33,7 +33,7 @@ model_list:
       model: chatgpt/codex-auto-review
 litellm_settings:
   callbacks:
-    - headroom_litellm_callback.HeadroomCallback
+    - headroom_litellm_callback.headroom_callback
     - arize_phoenix
   extra_spend_tag_headers:
     - x-openwebui-chat-id

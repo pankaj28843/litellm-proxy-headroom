@@ -8,6 +8,7 @@ from typing import Any
 import httpx
 
 DEFAULT_PROXY_URL = "http://127.0.0.1:4000"
+DEFAULT_ANALYTICS_URL = "http://127.0.0.1:8010"
 DEFAULT_MODEL_CANDIDATES = "gpt-5.4-mini"
 
 
@@ -25,7 +26,7 @@ def _get_status(client: httpx.Client, url: str) -> int:
 
 def _completion_payload(model: str, marker: str) -> dict[str, Any]:
     diagnostic_context = "\n".join(
-        f"event={idx} component=headroom route=/v1/chat/completions "
+        f"event={idx} component=litellm-headroom-callback route=/v1/chat/completions "
         "signal=repeatable-runtime-evidence status=observed"
         for idx in range(180)
     )
@@ -71,7 +72,13 @@ def _error_summary(response: httpx.Response) -> str:
 
 
 def main() -> int:
-    proxy_url = os.environ.get("HEADROOM_E2E_PROXY_URL", DEFAULT_PROXY_URL).rstrip("/")
+    proxy_url = os.environ.get(
+        "LITELLM_E2E_PROXY_URL",
+        os.environ.get("HEADROOM_E2E_PROXY_URL", DEFAULT_PROXY_URL),
+    ).rstrip("/")
+    analytics_url = os.environ.get(
+        "ANALYTICS_BACKEND_URL", DEFAULT_ANALYTICS_URL
+    ).rstrip("/")
     api_key = _env_required("LITELLM_MASTER_KEY")
     model_candidates = [
         model.strip()
@@ -81,7 +88,7 @@ def main() -> int:
         ).split(",")
         if model.strip()
     ]
-    marker = f"headroom-e2e-ok-{int(time.time())}"
+    marker = f"litellm-headroom-e2e-ok-{int(time.time())}"
 
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
 
@@ -90,6 +97,9 @@ def main() -> int:
         print(f"health_status={health_status}")
         if health_status >= 500:
             return 1
+        analytics_before_response = client.get(f"{analytics_url}/stats")
+        analytics_before_response.raise_for_status()
+        analytics_before = analytics_before_response.json()
 
         last_error = ""
         for model in model_candidates:
@@ -108,11 +118,29 @@ def main() -> int:
                 last_error = f"marker {marker!r} not found in response {text[:200]!r}"
                 continue
 
-            print(f"stats_status={_get_status(client, f'{proxy_url}/stats')}")
+            analytics_after = analytics_before
+            for _ in range(20):
+                analytics_after_response = client.get(f"{analytics_url}/stats")
+                analytics_after_response.raise_for_status()
+                analytics_after = analytics_after_response.json()
+                if analytics_after.get("requests", 0) > analytics_before.get(
+                    "requests", 0
+                ):
+                    break
+                time.sleep(0.25)
+
+            analytics_status = _get_status(client, f"{analytics_url}/stats")
+            print(f"analytics_stats_status={analytics_status}")
             print(
-                f"stats_history_status="
-                f"{_get_status(client, f'{proxy_url}/stats-history')}"
+                "analytics_requests_before="
+                f"{analytics_before.get('requests')} "
+                f"analytics_requests_after={analytics_after.get('requests')}"
             )
+            if analytics_after.get("requests", 0) <= analytics_before.get(
+                "requests", 0
+            ):
+                last_error = "analytics backend request count did not increase"
+                continue
             return 0
 
     print(f"e2e_failed={last_error}", file=sys.stderr)

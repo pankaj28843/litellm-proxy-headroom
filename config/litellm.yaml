@@ -1,8 +1,36 @@
 model_list:
-  - model_name: chatgpt
+  - model_name: gpt-5.5
+    model_info:
+      mode: responses
+      codex_slug: gpt-5.5
+      display_name: GPT-5.5
+      codex_default_reasoning_level: xhigh
+    litellm_params:
+      model: chatgpt/gpt-5.5
+  - model_name: gpt-5.4
+    model_info:
+      mode: responses
+      codex_slug: gpt-5.4
+      display_name: GPT-5.4
+      codex_default_reasoning_level: medium
     litellm_params:
       model: chatgpt/gpt-5.4
-
+  - model_name: gpt-5.4-mini
+    model_info:
+      mode: responses
+      codex_slug: gpt-5.4-mini
+      display_name: GPT-5.4-Mini
+      codex_default_reasoning_level: medium
+    litellm_params:
+      model: chatgpt/gpt-5.4-mini
+  - model_name: codex-auto-review
+    model_info:
+      mode: responses
+      codex_slug: codex-auto-review
+      display_name: Codex Auto Review
+      codex_default_reasoning_level: medium
+    litellm_params:
+      model: chatgpt/codex-auto-review
 litellm_settings:
   callbacks:
     - headroom_litellm_callback.HeadroomCallback
@@ -10,7 +38,6 @@ litellm_settings:
   extra_spend_tag_headers:
     - x-openwebui-chat-id
     - x-openwebui-message-id
-
 general_settings:
   user_header_mappings:
     - header_name: X-OpenWebUI-User-Id

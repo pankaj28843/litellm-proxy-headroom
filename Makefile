@@ -6,7 +6,7 @@ CHATGPT_AUTH_FILE ?= auth.json
 
 .DEFAULT_GOAL := up
 
-.PHONY: up init env auth-import build down restart logs ps mcp test lint format-check check config clean
+.PHONY: up init env auth-import build down restart logs ps mcp models test e2e lint format-check check config clean
 
 up: init
 	$(COMPOSE) up -d --build
@@ -49,8 +49,15 @@ ps:
 mcp: init
 	$(COMPOSE) run --rm headroom-mcp
 
+models:
+	uv run python scripts/update_litellm_models.py
+
 test:
 	uv run pytest -q
+
+e2e:
+	@if [ -f .env ]; then set -a; . ./.env; set +a; fi; \
+	uv run python scripts/e2e_chatgpt_headroom.py
 
 lint:
 	uv run ruff check .

@@ -1,25 +1,55 @@
+from __future__ import annotations
+
 from typing import Any
 
-from headroom.integrations.litellm_callback import HeadroomCallback as _HeadroomCallback
+from headroom.compress import CompressConfig, compress
+from headroom.integrations.litellm_callback import (
+    HeadroomCallback as _HeadroomLiteLLMCallback,
+)
 
-_callback: _HeadroomCallback | None = None
+_SAVINGS_PROFILE = "agent-90"
+_DEFAULT_MODEL = "claude-sonnet-4-5-20250929"
+_callback: HeadroomCallback | None = None
 
 
-def _callback_instance() -> _HeadroomCallback:
+def _callback_instance() -> HeadroomCallback:
     global _callback
     if _callback is None:
-        _callback = _HeadroomCallback()
+        _callback = HeadroomCallback()
     return _callback
 
 
-class HeadroomCallback(_HeadroomCallback):
-    """Compatibility shim for LiteLLM proxy callback loading.
+class HeadroomCallback(_HeadroomLiteLLMCallback):
+    """LiteLLM class-loading shim for Headroom's v0.27.0 callback.
 
-    LiteLLM proxy loads config-local callback paths as class objects in this
-    setup. Headroom's callback implements older instance handler names, so the
-    class-callable methods below keep LiteLLM's proxy hook surface from failing
-    while still delegating Headroom's original handlers through a lazy instance.
+    LiteLLM proxy loads config-local callbacks as class objects in this setup.
+    Headroom's callback is an instance-based CustomLogger, so the static hook
+    methods below delegate to one lazy instance. The only local behavior change
+    is selecting Headroom's built-in agent-90 savings profile for local
+    compression when no Headroom Cloud API key is configured.
     """
+
+    async def _local_compress(
+        self,
+        messages: list[dict[str, Any]],
+        model: str,
+    ) -> dict[str, Any]:
+        result = compress(
+            messages=messages,
+            model=model or _DEFAULT_MODEL,
+            model_limit=self._model_limit,
+            hooks=self._hooks,
+            config=CompressConfig(savings_profile=_SAVINGS_PROFILE),
+        )
+        return {
+            "messages": result.messages,
+            "tokens_before": result.tokens_before,
+            "tokens_after": result.tokens_after,
+            "tokens_saved": result.tokens_saved,
+            "compression_ratio": result.compression_ratio,
+            "transforms_applied": result.transforms_applied,
+            "savings_profile": _SAVINGS_PROFILE,
+        }
 
     @staticmethod
     async def async_pre_call_hook(

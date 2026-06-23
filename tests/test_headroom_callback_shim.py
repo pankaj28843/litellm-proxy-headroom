@@ -51,3 +51,43 @@ def test_headroom_callback_shim_post_call_hooks_work_when_loaded_as_class() -> N
 
     assert success_result is None
     assert failure_result is None
+
+
+def test_local_compression_uses_agent_90_profile(monkeypatch) -> None:
+    from types import SimpleNamespace
+
+    spec = importlib.util.spec_from_file_location(
+        "headroom_litellm_callback",
+        Path("config/headroom_litellm_callback.py"),
+    )
+    assert spec is not None
+    assert spec.loader is not None
+
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    captured = {}
+
+    def fake_compress(**kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace(
+            messages=kwargs["messages"],
+            tokens_before=1000,
+            tokens_after=100,
+            tokens_saved=900,
+            compression_ratio=0.1,
+            transforms_applied=["fake"],
+        )
+
+    monkeypatch.setattr(module, "compress", fake_compress)
+
+    result = asyncio.run(
+        module.HeadroomCallback()._local_compress(
+            [{"role": "user", "content": "large prompt"}],
+            "chatgpt",
+        )
+    )
+
+    assert captured["config"].savings_profile == "agent-90"
+    assert result["savings_profile"] == "agent-90"
+    assert result["tokens_saved"] == 900

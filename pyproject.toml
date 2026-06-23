@@ -6,7 +6,7 @@ readme = "README.md"
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "grpcio>=1.81.1",
-    "headroom-ai[mcp,proxy]",
+    "headroom-ai[mcp,proxy]==0.27.0",
     "litellm[proxy]",
     "opentelemetry-api>=1.42.1",
     "opentelemetry-exporter-otlp>=1.42.1",

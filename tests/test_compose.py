@@ -79,3 +79,21 @@ def test_compose_includes_headroom_mcp_stdio_service() -> None:
         "http://headroom:4000",
     ]
     assert "./data/headroom:/data/headroom" in mcp["volumes"]
+
+
+def test_default_stack_has_one_headroom_proxy_container_and_no_dashboard_service() -> None:
+    compose = yaml.safe_load(Path("docker-compose.yml").read_text(encoding="utf-8"))
+    services = compose["services"]
+
+    assert all("dashboard" not in name for name in services)
+
+    default_headroom_services = [
+        name
+        for name, service in services.items()
+        if name.startswith("headroom") and not service.get("profiles")
+    ]
+    assert default_headroom_services == ["headroom"]
+
+    headroom = services["headroom"]
+    assert headroom["environment"]["OPENAI_TARGET_API_URL"] == "http://litellm:4000"
+    assert "127.0.0.1:4000:4000" in headroom["ports"]

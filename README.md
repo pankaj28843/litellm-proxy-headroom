@@ -64,6 +64,8 @@ Useful targets:
 ```bash
 make auth-import        # copy existing sibling ChatGPT OAuth file if present
 make mcp                # run Headroom's stdio MCP server against the proxy
+make models             # refresh LiteLLM models from codex debug models
+make e2e                # send a real request through Headroom -> LiteLLM
 make logs SERVICE=litellm
 make ps
 make down
@@ -84,3 +86,18 @@ forwards OpenAI-compatible requests to the internal LiteLLM upstream.
 Headroom runs at its documented root instead of being mounted under LiteLLM.
 This keeps `/dashboard`, `/health`, `/stats`, `/stats-history`, and `/v1/*`
 on the same localhost-bound public port without wrapper route aliases.
+
+## Headroom Callback
+
+The LiteLLM config uses `config/headroom_litellm_callback.py` as a small
+Headroom v0.27.0 compatibility shim. It keeps LiteLLM's class callback loading
+working and selects Headroom's built-in `agent-90` local compression profile.
+The default stack leaves `HEADROOM_API_KEY` unset, so no extra profile-specific
+environment variable is required.
+
+## Codex Models
+
+Run `make models` to repopulate `config/litellm.yaml` from
+`codex debug models`. The generated entries expose each API-supported Codex
+model slug directly and map it to LiteLLM's ChatGPT subscription provider as
+`chatgpt/<slug>`.

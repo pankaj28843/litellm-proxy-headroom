@@ -3,12 +3,27 @@ from pathlib import Path
 import yaml
 
 
-def test_litellm_config_uses_chatgpt_provider_and_headroom_callback() -> None:
-    config = yaml.safe_load(Path("config/litellm.yaml").read_text(encoding="utf-8"))
+def _litellm_config() -> dict:
+    return yaml.safe_load(Path("config/litellm.yaml").read_text(encoding="utf-8"))
 
-    [model] = config["model_list"]
-    assert model["model_name"] == "chatgpt"
-    assert model["litellm_params"]["model"].startswith("chatgpt/")
+
+def test_litellm_config_uses_generated_chatgpt_models_and_headroom_callback() -> None:
+    config = _litellm_config()
+
+    model_list = config["model_list"]
+    model_names = [model["model_name"] for model in model_list]
+
+    assert model_names == [
+        "gpt-5.5",
+        "gpt-5.4",
+        "gpt-5.4-mini",
+        "codex-auto-review",
+    ]
+    for model in model_list:
+        assert model["model_info"]["mode"] == "responses"
+        assert model["model_info"]["codex_slug"] == model["model_name"]
+        assert model["litellm_params"]["model"] == f"chatgpt/{model['model_name']}"
+
     assert config["litellm_settings"]["callbacks"] == [
         "headroom_litellm_callback.HeadroomCallback",
         "arize_phoenix",

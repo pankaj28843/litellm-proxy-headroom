@@ -1,0 +1,62 @@
+<section class="dashboard-band" aria-labelledby="activity-heading">
+  <div class="section-heading">
+    <h2 id="activity-heading">Activity And Risk</h2>
+    <p>Cache, retrieval, provider delta, and failure signals</p>
+  </div>
+
+  <div class="compact-metric-grid">
+    {% for metric in activity_metrics %}
+    <article class="compact-metric compact-metric--{{ metric.tone }}">
+      <span>{{ metric.label }}</span>
+      <strong>{{ metric.value }}</strong>
+      <small>{{ metric.detail }}</small>
+    </article>
+    {% endfor %}
+    {% for metric in risk_metrics %}
+    <article class="compact-metric compact-metric--{{ metric.tone }}">
+      <span>{{ metric.label }}</span>
+      <strong>{{ metric.value }}</strong>
+      <small>{{ metric.detail }}</small>
+    </article>
+    {% endfor %}
+  </div>
+
+  <div class="detail-grid">
+    <dl>
+      <div>
+        <dt>Measured provider cost</dt>
+        <dd>{{ stats.cost.measured_provider_cost_total|money }}</dd>
+      </div>
+      <div>
+        <dt>Estimated baseline cost</dt>
+        <dd>{{ stats.cost.estimated_baseline_cost_total|money }}</dd>
+      </div>
+      <div>
+        <dt>Provider input tokens</dt>
+        <dd>{{ stats.provider_estimate_delta.provider_reported_input_tokens|integer }}</dd>
+      </div>
+      <div>
+        <dt>Estimated before delta</dt>
+        <dd>{{ stats.provider_estimate_delta.estimated_before_provider_input_delta|signed_integer }}</dd>
+      </div>
+    </dl>
+    <dl>
+      <div>
+        <dt>Compression duration p50</dt>
+        <dd>{{ stats.latency_distribution.p50_compression_duration_ms|float }} ms</dd>
+      </div>
+      <div>
+        <dt>Compression duration p90</dt>
+        <dd>{{ stats.latency_distribution.p90_compression_duration_ms|float }} ms</dd>
+      </div>
+      <div>
+        <dt>Cache tokens read</dt>
+        <dd>{{ stats.cache.cache_tokens_read|integer }}</dd>
+      </div>
+      <div>
+        <dt>Cache tokens written</dt>
+        <dd>{{ stats.cache.cache_tokens_written|integer }}</dd>
+      </div>
+    </dl>
+  </div>
+</section>

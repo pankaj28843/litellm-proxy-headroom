@@ -2,13 +2,17 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from contextlib import AsyncExitStack, asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 
 from ..otel.setup import configure_otel_from_env, instrument_analytics_app
 from ..postgres.session import create_analytics_engine, create_session_factory
 from .mcp import create_analytics_mcp_server
 from .routes import router
+
+DASHBOARD_STATIC_DIR = Path(__file__).with_name("static").joinpath("dashboard")
 
 
 @asynccontextmanager
@@ -40,6 +44,11 @@ def create_app() -> FastAPI:
     app.state.analytics_mcp_server = mcp
     app.state.analytics_mcp_app = mcp_app
     app.include_router(router)
+    app.mount(
+        "/dashboard/static",
+        StaticFiles(directory=DASHBOARD_STATIC_DIR),
+        name="dashboard_static",
+    )
     app.mount("/mcp", mcp_app)
     instrument_analytics_app(app)
     return app

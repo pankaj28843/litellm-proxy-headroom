@@ -1,0 +1,104 @@
+<details class="filter-panel">
+  <summary>
+    <span class="filter-summary-main">
+      <strong>Filters</strong>
+      <span>{{ query.window_label }} · {{ filter_chips|length }} active</span>
+    </span>
+    {% if filter_chips %}
+    <span class="filter-chip-row" aria-label="Active filters">
+      {% for chip in filter_chips[:3] %}
+      <span class="filter-chip">{{ chip.label }}: {{ chip.value }}</span>
+      {% endfor %}
+      {% if filter_chips|length > 3 %}
+      <span class="filter-chip">+{{ filter_chips|length - 3 }} more</span>
+      {% endif %}
+    </span>
+    {% else %}
+    <span class="filter-chip-row">No provider, model, tenant, team, or status filters</span>
+    {% endif %}
+  </summary>
+
+  <form id="dashboard-filters" class="filter-bar" method="get" action="{{ url_for('dashboard') }}">
+    <input type="hidden" name="paused" value="{{ 'true' if query.paused else 'false' }}">
+
+    <label>
+      <span>Range</span>
+      <select name="preset">
+        {% for preset in presets %}
+        <option value="{{ preset.value }}" {% if preset.value == query.preset %}selected{% endif %}>
+          {{ preset.label }}
+        </option>
+        {% endfor %}
+      </select>
+    </label>
+
+    <label>
+      <span>From</span>
+      <input type="datetime-local" name="from" value="{{ query.explicit_from|datetime_input }}">
+    </label>
+
+    <label>
+      <span>To</span>
+      <input type="datetime-local" name="to" value="{{ query.explicit_to|datetime_input }}">
+    </label>
+
+    <label>
+      <span>Provider</span>
+      <input name="provider" value="{{ query.filters.provider or '' }}" placeholder="Any">
+    </label>
+
+    <label>
+      <span>Model</span>
+      <input name="model" value="{{ query.filters.model or '' }}" placeholder="Any">
+    </label>
+
+    <label>
+      <span>Strategy</span>
+      <input name="strategy" value="{{ query.filters.strategy or '' }}" placeholder="Any">
+    </label>
+
+    <label>
+      <span>Tenant</span>
+      <input name="tenant_id" value="{{ query.filters.tenant_id or '' }}" placeholder="Any">
+    </label>
+
+    <label>
+      <span>Team</span>
+      <input name="team_id" value="{{ query.filters.team_id or '' }}" placeholder="Any">
+    </label>
+
+    <label>
+      <span>Status</span>
+      <select name="status">
+        <option value="" {% if not query.filters.status %}selected{% endif %}>Any</option>
+        <option value="succeeded" {% if query.filters.status == 'succeeded' %}selected{% endif %}>Succeeded</option>
+        <option value="failed" {% if query.filters.status == 'failed' %}selected{% endif %}>Failed</option>
+        <option value="running" {% if query.filters.status == 'running' %}selected{% endif %}>Running</option>
+      </select>
+    </label>
+
+    <label>
+      <span>Savings</span>
+      <select name="negative_savings">
+        <option value="" {% if query.filters.negative_savings is none %}selected{% endif %}>All</option>
+        <option value="true" {% if query.filters.negative_savings is sameas true %}selected{% endif %}>Negative only</option>
+        <option value="false" {% if query.filters.negative_savings is sameas false %}selected{% endif %}>Non-negative</option>
+      </select>
+    </label>
+
+    <label class="toggle-control">
+      <input type="hidden" name="live" value="false">
+      <input type="checkbox" name="live" value="true" {% if query.live %}checked{% endif %}>
+      <span>Live</span>
+    </label>
+
+    <div class="filter-actions">
+      <button type="submit">Apply</button>
+      {% if query.paused %}
+      <a class="button-link" href="{{ url_for('dashboard') }}?{{ query.query_string(overrides={'paused': 'false'}) }}">Resume</a>
+      {% else %}
+      <a class="button-link" href="{{ url_for('dashboard') }}?{{ query.query_string(overrides={'paused': 'true'}) }}">Pause</a>
+      {% endif %}
+    </div>
+  </form>
+</details>

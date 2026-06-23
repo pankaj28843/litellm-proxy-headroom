@@ -96,6 +96,19 @@ uv run python scripts/e2e_query_stats_smoke.py
 uv run python scripts/e2e_dashboard_stats_smoke.py
 ```
 
+The analytics dashboard is served by the custom backend at:
+
+```text
+http://127.0.0.1:8010/dashboard
+```
+
+It is a server-rendered Jinja/HTMX dashboard backed by the same PostgreSQL
+source rows as the read APIs. It supports `15m`, `1h`, `24h`, `7d`, `30d`,
+`all`, and custom `from`/`to` ranges; provider/model/strategy/tenant/team/status
+filters; negative-savings filtering; live polling; and pause/resume. Empty
+states are real empty states, not fake production totals. Use
+`scripts/e2e_dashboard_stats_smoke.py` to seed demo evidence.
+
 Smoke historical simulation replay and production-record isolation:
 
 ```bash
@@ -146,6 +159,11 @@ http://127.0.0.1:8010/mcp/
 
 Dashboard/read APIs are exposed by the custom backend:
 
+- `GET /dashboard` with dashboard filters: `preset`, `from`, `to`, `provider`,
+  `model`, `strategy`, `tenant_id`, `team_id`, `status`, `negative_savings`,
+  `live`, and `paused`.
+- `GET /dashboard/partials/live`, `/controls`, `/summary`, `/activity`,
+  `/breakdowns`, `/records`, and `/simulations` for HTMX refresh.
 - `GET /stats` with filters: `from`, `to`, `provider`, `model`, `strategy`,
   `tenant_id`, `team_id`, `status`, and `negative_savings`.
 - `GET /stats/breakdown?group_by=provider|model|strategy|tenant|team|status`

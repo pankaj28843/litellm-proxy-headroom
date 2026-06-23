@@ -1,0 +1,39 @@
+<section class="dashboard-band" aria-labelledby="simulations-heading">
+  <div class="section-heading">
+    <h2 id="simulations-heading">Simulation Replay</h2>
+    <p>{{ simulations.total|integer }} stored runs</p>
+  </div>
+
+  {% if simulations.items %}
+  <div class="simulation-list">
+    {% for run in simulations.items %}
+    <article class="simulation-row">
+      <div>
+        <strong>{{ run.name }}</strong>
+        <span>{{ run.simulation_key }}</span>
+      </div>
+      <dl>
+        <div>
+          <dt>Status</dt>
+          <dd><span class="status-dot status-dot--{{ run.status|status_tone }}">{{ run.status }}</span></dd>
+        </div>
+        <div>
+          <dt>Results</dt>
+          <dd>{{ run.result_count|integer }}</dd>
+        </div>
+        <div>
+          <dt>Saved</dt>
+          <dd>{{ run.total_simulated_tokens_saved|integer }}</dd>
+        </div>
+        <div>
+          <dt>Created</dt>
+          <dd>{{ run.created_at|datetime_short }}</dd>
+        </div>
+      </dl>
+    </article>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="empty-inline">No simulation runs have been stored.</p>
+  {% endif %}
+</section>

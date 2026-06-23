@@ -1,0 +1,13 @@
+<div class="refresh-line">
+  <span>Last refresh {{ query.generated_at|datetime_short }}</span>
+  <span>Window {{ query.window_label }}</span>
+</div>
+
+{% include "dashboard/partials/summary.html" %}
+{% include "dashboard/partials/activity.html" %}
+{% include "dashboard/partials/breakdowns.html" %}
+
+<div class="two-column-region">
+  {% include "dashboard/partials/records.html" %}
+  {% include "dashboard/partials/simulations.html" %}
+</div>

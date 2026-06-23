@@ -1,0 +1,42 @@
+<section class="dashboard-band" aria-labelledby="records-heading">
+  <div class="section-heading">
+    <h2 id="records-heading">Recent Records</h2>
+    <p>{{ records.total|integer }} matching executions</p>
+  </div>
+
+  {% if records.items %}
+  <div class="responsive-table">
+    <table>
+      <thead>
+        <tr>
+          <th scope="col">Request</th>
+          <th scope="col">Status</th>
+          <th scope="col">Provider</th>
+          <th scope="col">Model</th>
+          <th scope="col">Saved</th>
+          <th scope="col">Ratio</th>
+          <th scope="col">Retr</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for record in records.items %}
+        <tr>
+          <th scope="row" data-label="Request">
+            <a href="/records/compression/{{ record.request_key }}">{{ record.request_key }}</a>
+            <span>{{ record.started_at|datetime_short }}</span>
+          </th>
+          <td data-label="Status"><span class="status-dot status-dot--{{ record.status|status_tone }}">{{ record.status }}</span></td>
+          <td data-label="Provider">{{ record.provider or 'unknown' }}</td>
+          <td data-label="Model">{{ record.model or 'unknown' }}</td>
+          <td data-label="Saved">{{ record.tokens_saved|integer }}</td>
+          <td data-label="Ratio">{{ record.compression_ratio|ratio }}</td>
+          <td data-label="Retr">{{ record.retrievals|integer }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="empty-inline">No recent records match the active filters.</p>
+  {% endif %}
+</section>

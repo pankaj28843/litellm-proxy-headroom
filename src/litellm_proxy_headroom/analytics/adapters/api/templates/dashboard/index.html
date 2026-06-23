@@ -1,0 +1,44 @@
+{% extends "dashboard/base.html" %}
+
+{% block body %}
+<div class="dashboard-shell">
+  <header class="dashboard-header">
+    <div>
+      <p class="eyebrow">Headroom Analytics</p>
+      <h1>Compression Value Console</h1>
+    </div>
+    <div class="status-strip" aria-label="Dashboard status">
+      <span class="status-pill status-pill--success">Backend {{ backend_status }}</span>
+      <span class="status-pill status-pill--{{ 'success' if database_ready else 'danger' }}">
+        Database {{ 'ready' if database_ready else 'unavailable' }}
+      </span>
+      <span class="status-pill status-pill--{{ 'info' if query.auto_refresh else 'neutral' }}">
+        {{ 'Live' if query.auto_refresh else 'Paused' }}
+      </span>
+      <span id="dashboard-indicator" class="request-indicator htmx-indicator">Refreshing</span>
+      {% if query.paused %}
+      <a class="status-action" href="{{ url_for('dashboard') }}?{{ query.query_string(overrides={'paused': 'false'}) }}">Resume</a>
+      {% else %}
+      <a class="status-action" href="{{ url_for('dashboard') }}?{{ query.query_string(overrides={'paused': 'true'}) }}">Pause</a>
+      {% endif %}
+    </div>
+  </header>
+
+  {% include "dashboard/partials/controls.html" %}
+
+  <main
+    id="dashboard-live-region"
+    class="dashboard-live-region"
+    {% if query.auto_refresh %}
+    hx-get="{{ url_for('dashboard_live_partial') }}"
+    hx-trigger="every 15s"
+    hx-target="#dashboard-live-region"
+    hx-swap="innerHTML"
+    hx-include="#dashboard-filters"
+    hx-indicator="#dashboard-indicator"
+    {% endif %}
+  >
+    {% include "dashboard/partials/live_region.html" %}
+  </main>
+</div>
+{% endblock %}

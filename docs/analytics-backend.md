@@ -135,6 +135,13 @@ Operational endpoints:
 - `GET /ready`
 - `GET /metrics`
 - `GET /dashboard`
+- `GET /dashboard/partials/live`
+- `GET /dashboard/partials/controls`
+- `GET /dashboard/partials/summary`
+- `GET /dashboard/partials/activity`
+- `GET /dashboard/partials/breakdowns`
+- `GET /dashboard/partials/records`
+- `GET /dashboard/partials/simulations`
 
 Ingest and retrieval:
 
@@ -159,6 +166,57 @@ Read APIs:
 The stats, breakdown, records, and dashboard endpoints support filters for time
 range, provider, model, strategy, tenant, team, status, and negative savings
 where applicable. Large record reads are paginated.
+
+## Dashboard
+
+The custom analytics backend owns `/dashboard`. It does not mount, alias, or
+proxy Headroom's dashboard. LiteLLM stays on port 4000 and Headroom remains a
+library/callback/CCR backend in that request path.
+
+The dashboard implementation is server-rendered:
+
+- Jinja templates live under
+  `src/litellm_proxy_headroom/analytics/adapters/api/templates/dashboard/`.
+- Static CSS lives under
+  `src/litellm_proxy_headroom/analytics/adapters/api/static/dashboard/` and is
+  served from `/dashboard/static`.
+- HTMX refreshes use `/dashboard/partials/*` routes with
+  `hx-include="#dashboard-filters"` so date and filter state is preserved.
+- The live region polls every 15 seconds only when `live=true` and
+  `paused=false`; pause removes the polling attributes and resume restores them.
+
+Supported dashboard query controls:
+
+| Query | Purpose |
+|---|---|
+| `preset` | `15m`, `1h`, `24h`, `7d`, `30d`, `all`, or `custom`. |
+| `from`, `to` | ISO datetimes for custom ranges. If either is present, the effective preset is `custom`. |
+| `provider`, `model`, `strategy` | Provider/model/compression-strategy filters. |
+| `tenant_id`, `team_id` | Tenant and team filters. |
+| `status` | Execution status filter such as `succeeded`, `failed`, or `running`. |
+| `negative_savings` | `true` for expanded-token executions only, `false` for non-negative only. |
+| `live`, `paused` | Live polling state. |
+
+The first viewport is the operational story: Current Impact, then Activity And
+Risk, then Investigation, Recent Records, and Simulation Replay. Those panels
+are computed from source rows through the same read models as `/stats/dashboard`,
+`/stats/breakdown`, `/records/compression`, and `/simulations/runs`.
+
+Empty states are truthful. If no persisted compression executions match the
+filters, the page tells the operator to run the dashboard smoke seed or widen
+the range. To create demo evidence without a paid model call:
+
+```bash
+DASHBOARD_STATS_SMOKE_MARKER=dashboard-demo-$(date +%s) \
+  uv run python scripts/e2e_dashboard_stats_smoke.py
+```
+
+Then open `/dashboard?preset=all&provider=<printed-provider>`.
+
+Templates must not render prompt text, response text, original chunk content, or
+compressed chunk content. Routine dashboard surfaces show identifiers, hashes,
+counts, status, provider/model labels, token measurements, costs, and
+content-present booleans only.
 
 ## Content And Retention
 

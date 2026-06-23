@@ -129,6 +129,110 @@ Expected evidence:
   `analytics_stats_status=200`, and an analytics request-count increase.
 - Analytics smoke prints `analytics_smoke=ok` and `duplicate=True`.
 
+## Dashboard Evidence
+
+The dashboard proof is runtime-first. Seed source rows, verify HTTP/read-model
+surfaces, then inspect the browser.
+
+Repeatable seed command:
+
+```bash
+DASHBOARD_STATS_SMOKE_MARKER=dashboard-browser-smoke-$(date +%s) \
+  uv run python scripts/e2e_dashboard_stats_smoke.py
+```
+
+Representative completed seed from the dashboard implementation pass:
+
+```text
+marker=dashboard-browser-smoke-1782222979
+provider=dashboard-provider-1782222979
+model=dashboard-model-1782222979
+strategy=dashboard-strategy-1782222979
+tenant=dashboard-tenant-1782222979
+team=dashboard-team-1782222979
+```
+
+The smoke script verifies `/ready`, `POST /ingest/compression`,
+`GET /chunks/{ccr_hash}`, `POST /simulations/runs`, `/stats/dashboard`,
+`/stats/breakdown`, `/records/compression`, `/dashboard`,
+`/dashboard/partials/live`, `/dashboard/partials/records`,
+`/dashboard/partials/simulations`, `/dashboard/static/dashboard.css`,
+`/simulations/runs`, `/metrics`, and a PostgreSQL recomputation spot check.
+
+Endpoint spot checks for the same marker:
+
+```bash
+curl -fsS 'http://127.0.0.1:8010/dashboard?provider=dashboard-provider-1782222979&model=dashboard-model-1782222979&strategy=dashboard-strategy-1782222979&tenant_id=dashboard-tenant-1782222979&team_id=dashboard-team-1782222979&preset=all&live=true'
+
+curl -fsS 'http://127.0.0.1:8010/dashboard/partials/live?provider=dashboard-provider-1782222979&model=dashboard-model-1782222979&strategy=dashboard-strategy-1782222979&tenant_id=dashboard-tenant-1782222979&team_id=dashboard-team-1782222979&preset=all'
+
+curl -fsS 'http://127.0.0.1:8010/dashboard?preset=all&provider=dashboard-provider-1782222979-no-match&live=false'
+```
+
+Expected evidence:
+
+- The dashboard HTML contains the compact filter panel, active filter chips,
+  Current Impact, Tokens saved, Recent Records, Simulation Replay, and a
+  Pause/Resume action.
+- Partial responses return `200` and contain only the partial region, not a
+  full `<!doctype html>` document.
+- Empty-state filters render "No persisted compression executions match these
+  filters" rather than fake totals.
+- Rendered HTML and templates do not expose prompt text, response text,
+  original chunk content, or compressed chunk content.
+
+Browser evidence from the completed pass is under:
+
+```text
+tmp/dashboard-evidence/dashboard-browser-smoke-1782222979/
+```
+
+Important artifacts:
+
+- `browser-evidence.json`: CSS responses all `200`; HTMX partial responses
+  `200`; filter inclusion preserved provider/model/strategy/tenant/team query
+  values; pause removed live polling; resume restored polling; console and page
+  error counts were `0` in the clean browser run; desktop width was 1440 with
+  no page overflow; mobile width was 390 with no page overflow.
+- `desktop-initial.png`, `desktop-paused.png`, `desktop-resumed.png`, and
+  `mobile-initial.png`: screenshots for desktop, state changes, and mobile.
+- `design-audit.md`: UI audit with fixed mobile records and favicon findings.
+- `visual-reasoning/report.json` and `visual-reasoning/rework-brief.md`:
+  initial image review.
+- `visual-reasoning-cdp-headed-compact/report.json` and
+  `visual-reasoning-cdp-headed-compact/rework-brief.md`: compactness pass after
+  the filter-panel rework.
+
+For headed cdp proof, reuse the existing Headroom tab when possible:
+
+```bash
+cdp pages --browser-mode headed --json
+cdp --browser-mode headed screenshot \
+  --target <headroom-tab-id> \
+  --out tmp/dashboard-evidence/<marker>/cdp-headed-compact-desktop.png \
+  --json
+cdp --browser-mode headed console --errors \
+  --target <headroom-tab-id> \
+  --wait 2s \
+  --limit 0 \
+  --json
+```
+
+The implementation pass reused target
+`EBFC9AEDDE03E4B5D6A803F96B2C60C9`. The headed default profile reported one
+runtime exception reading `global`; the clean browser evidence did not reproduce
+it, so it is recorded as headed profile/runtime noise unless future evidence
+ties it to dashboard code.
+
+Phoenix notes: the dashboard work did not change OTel semantics. Phoenix
+evidence is still useful for LiteLLM and analytics backend spans when OTel is
+enabled, but the dashboard proof itself is HTTP, PostgreSQL, browser, network,
+console, and screenshot evidence.
+
+Auth and cost caveats: the dashboard seed is synthetic and does not call a paid
+model. `make e2e` uses the real LiteLLM path and should run only when ChatGPT
+OAuth/auth is available; never print token contents while checking that state.
+
 ## Stats And Metrics
 
 Take snapshots after the smoke commands complete:

@@ -1,0 +1,42 @@
+<section class="dashboard-band" aria-labelledby="breakdown-heading">
+  <div class="section-heading">
+    <h2 id="breakdown-heading">Investigation</h2>
+    <p>Where savings, failures, and negative outcomes are concentrated</p>
+  </div>
+
+  <div class="breakdown-grid">
+    {% for group in breakdown_groups %}
+    {% set breakdown = breakdowns[group.key] %}
+    <section class="breakdown-panel" aria-labelledby="breakdown-{{ group.key }}">
+      <div class="panel-heading">
+        <h3 id="breakdown-{{ group.key }}">{{ group.label }}</h3>
+        <span>{{ group.description }}</span>
+      </div>
+      {% if breakdown.rows %}
+      <table>
+        <thead>
+          <tr>
+            <th scope="col">Value</th>
+            <th scope="col">Exec</th>
+            <th scope="col">Saved</th>
+            <th scope="col">Neg</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in breakdown.rows %}
+          <tr>
+            <th scope="row">{{ row.value }}</th>
+            <td>{{ row.executions|integer }}</td>
+            <td>{{ row.tokens_saved|integer }}</td>
+            <td>{{ row.negative_savings_executions|integer }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="empty-inline">No rows for this filter.</p>
+      {% endif %}
+    </section>
+    {% endfor %}
+  </div>
+</section>

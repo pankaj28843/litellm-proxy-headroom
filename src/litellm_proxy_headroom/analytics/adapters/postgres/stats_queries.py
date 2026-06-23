@@ -184,8 +184,16 @@ async def compression_stats_breakdown(
     limit: int = 50,
 ) -> StatsBreakdown:
     dimension = {
-        "provider": func.coalesce(CompressionRequestModel.provider_hint, "unknown"),
-        "model": func.coalesce(CompressionRequestModel.model_hint, "unknown"),
+        "provider": func.coalesce(
+            _latest_provider_field(ProviderCallModel.provider),
+            CompressionRequestModel.provider_hint,
+            "unknown",
+        ),
+        "model": func.coalesce(
+            _latest_provider_field(ProviderCallModel.model),
+            CompressionRequestModel.model_hint,
+            "unknown",
+        ),
         "strategy": CompressionConfigSnapshotModel.strategy_name,
         "tenant": func.coalesce(CompressionRequestModel.tenant_id, "unknown"),
         "team": func.coalesce(CompressionRequestModel.team_id, "unknown"),
@@ -241,4 +249,14 @@ async def compression_stats_breakdown(
             )
             for row in rows
         ],
+    )
+
+
+def _latest_provider_field(column: Any) -> Any:
+    return (
+        select(column)
+        .where(ProviderCallModel.execution_id == CompressionExecutionModel.id)
+        .order_by(ProviderCallModel.created_at.desc())
+        .limit(1)
+        .scalar_subquery()
     )

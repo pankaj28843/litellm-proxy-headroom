@@ -81,7 +81,9 @@ def test_compose_includes_headroom_mcp_stdio_service() -> None:
     assert "./data/headroom:/data/headroom" in mcp["volumes"]
 
 
-def test_default_stack_has_one_headroom_proxy_container_and_no_dashboard_service() -> None:
+def test_default_stack_has_one_headroom_proxy_container_and_no_dashboard_service() -> (
+    None
+):
     compose = yaml.safe_load(Path("docker-compose.yml").read_text(encoding="utf-8"))
     services = compose["services"]
 

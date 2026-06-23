@@ -99,10 +99,7 @@ def main() -> int:
             )
             if response.status_code != 200:
                 last_error = _error_summary(response)
-                print(
-                    f"model={model} chat_status={response.status_code} "
-                    f"{last_error}"
-                )
+                print(f"model={model} chat_status={response.status_code} {last_error}")
                 continue
 
             text = _response_text(response).strip()

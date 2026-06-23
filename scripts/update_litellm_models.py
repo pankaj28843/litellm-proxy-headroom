@@ -18,7 +18,9 @@ class IndentedSafeDumper(yaml.SafeDumper):
         return super().increase_indent(flow=flow, indentless=False)
 
 
-def load_codex_models(command: tuple[str, ...] = DEFAULT_CODEX_COMMAND) -> dict[str, Any]:
+def load_codex_models(
+    command: tuple[str, ...] = DEFAULT_CODEX_COMMAND,
+) -> dict[str, Any]:
     result = subprocess.run(
         command,
         check=True,

@@ -345,9 +345,11 @@ of copying the key. Set `OPENCODE_LITELLM_HOME` to move the managed home. Set
 `OPENCODE_LITELLM_BASE_URL` and `OPENCODE_LITELLM_ANALYTICS_URL` when services
 are not on `http://127.0.0.1:4000` and `http://127.0.0.1:8010`. The wrapper
 pins `--model litellm/gpt-5.5` for run-style commands unless the command
-already supplies `--model`. `opencode models litellm` and a real
-`gpt-5.4-mini` smoke run have reached LiteLLM with marker-correlated provider
-usage; practical `gpt-5.5` series proof is still pending.
+already supplies `--model`. `opencode models litellm`, a real `gpt-5.4-mini`
+smoke run, and a real practical `gpt-5.5` series have reached LiteLLM with
+marker-correlated provider usage. The practical series currently has no
+provider-reported cached input and no observed cost, so OpenCode routing is
+supported but cache usefulness is not proven.
 
 ## Agent-90 Usefulness Harness
 

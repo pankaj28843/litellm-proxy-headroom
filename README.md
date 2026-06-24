@@ -297,8 +297,8 @@ provider-row proof schema is in
 [docs/multi-cli-proof-contract.md](docs/multi-cli-proof-contract.md). Short
 version: Codex is the proven useful path, Claude Code is route-gated, OpenCode
 routes through LiteLLM but has no cache-usefulness proof yet, and GitHub
-Copilot CLI is isolation-only until GitHub exposes a documented local
-BYOK/base-URL provider surface for the target model.
+Copilot CLI now routes through LiteLLM BYOK after upgrading to Copilot CLI
+1.0.64, but has no cache-usefulness proof yet.
 
 `bin/codex-litellm` sets `CODEX_HOME` to the managed `~/.codex-headroom`
 directory, writes `config.toml` and `litellm.config.toml`, symlinks native
@@ -355,12 +355,20 @@ marker-correlated provider usage. The practical series currently has no
 provider-reported cached input and no observed cost, so OpenCode routing is
 supported but cache usefulness is not proven.
 
-`bin/copilot-litellm` is intentionally isolation-only. It sets `COPILOT_HOME`
-and `--config-dir` to managed `~/.copilot-headroom`, disables Copilot
-auto-update for wrapper sessions, and refuses native `~/.copilot` by default.
-It does not configure a LiteLLM provider route because current Copilot CLI help
-and GitHub docs expose hosted models, `COPILOT_HOME`, and `--config-dir`, but
-not a documented local OpenAI-compatible base-URL/API-key override.
+`bin/copilot-litellm` sets `COPILOT_HOME` to managed `~/.copilot-headroom`,
+disables Copilot auto-update for wrapper sessions, refuses native `~/.copilot`
+by default, and configures Copilot CLI's documented BYOK provider surface for
+the local LiteLLM OpenAI-compatible endpoint. It maps `LITELLM_MASTER_KEY` to
+`COPILOT_PROVIDER_BEARER_TOKEN`, sets `COPILOT_PROVIDER_BASE_URL` from
+`COPILOT_LITELLM_BASE_URL` normalized to `/v1`, uses
+`COPILOT_PROVIDER_TYPE=openai`, and defaults to
+`COPILOT_PROVIDER_WIRE_API=responses` for GPT-5.x models. Set
+`COPILOT_LITELLM_MODEL`, `COPILOT_LITELLM_PROVIDER_MODEL_ID`, or
+`COPILOT_LITELLM_WIRE_MODEL` when Copilot's agent configuration model and the
+LiteLLM wire model should differ. Current proof: real Copilot CLI
+`gpt-5.4-mini` smoke and three-call `gpt-5.5` practical series route through
+LiteLLM; provider cached input is absent and observed cost is unavailable, so
+cache/cost usefulness is not claimed.
 
 ## Agent-90 Usefulness Harness
 

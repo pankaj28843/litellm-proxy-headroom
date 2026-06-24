@@ -109,6 +109,33 @@ def test_build_proof_record_rejects_unknown_status() -> None:
         raise AssertionError("expected ValueError")
 
 
+def test_build_proof_record_can_override_cost_status() -> None:
+    proof = build_proof_record(
+        cli="copilot",
+        wrapper="bin/copilot-litellm",
+        managed_home="~/.copilot-headroom",
+        support_status="route_supported_cache_unproven",
+        marker="copilot-practical",
+        model_scope=[],
+        artifact_dir="tmp/copilot",
+        db_correlation="time_window",
+        rows=[
+            {
+                "request_key": "r1",
+                "measurement_source": "provider_reported",
+                "input_tokens": 100,
+                "total_tokens": 110,
+                "cost_total": "0.00000000",
+            }
+        ],
+        notes=[],
+        cost_status_override="unavailable",
+    )
+
+    assert proof["aggregate"]["cost_status"] == "unavailable"
+    assert proof["aggregate"]["cost_total"] is None
+
+
 def test_collector_cli_writes_normalized_proof_json(tmp_path: Path) -> None:
     rows_path = tmp_path / "rows.json"
     out_path = tmp_path / "proof.json"

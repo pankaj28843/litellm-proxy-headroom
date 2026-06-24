@@ -21,6 +21,7 @@ SUPPORT_STATUSES = {
     "unsupported",
 }
 DB_CORRELATION_VALUES = {"marker", "time_window", "not_applicable"}
+COST_STATUS_VALUES = {"observed", "unavailable", "not_applicable"}
 
 
 def _optional_int(value: Any) -> int | None:
@@ -137,13 +138,23 @@ def build_proof_record(
     db_correlation: str,
     rows: list[dict[str, Any]],
     notes: list[str],
+    cost_status_override: str | None = None,
 ) -> dict[str, Any]:
     if support_status not in SUPPORT_STATUSES:
         raise ValueError(f"unsupported support_status: {support_status}")
     if db_correlation not in DB_CORRELATION_VALUES:
         raise ValueError(f"unsupported db_correlation: {db_correlation}")
+    if (
+        cost_status_override is not None
+        and cost_status_override not in COST_STATUS_VALUES
+    ):
+        raise ValueError(f"unsupported cost_status_override: {cost_status_override}")
 
     aggregate = aggregate_provider_rows(rows)
+    if cost_status_override is not None:
+        aggregate["cost_status"] = cost_status_override
+        if cost_status_override != "observed":
+            aggregate["cost_total"] = None
     return {
         "cli": cli,
         "wrapper": wrapper,
@@ -190,6 +201,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--db-rows-json", type=Path)
     parser.add_argument("--note", action="append", default=[])
+    parser.add_argument("--cost-status-override", choices=sorted(COST_STATUS_VALUES))
     parser.add_argument("--out", type=Path, required=True)
     return parser.parse_args()
 
@@ -208,6 +220,7 @@ def main() -> int:
         db_correlation=args.db_correlation,
         rows=rows,
         notes=args.note,
+        cost_status_override=args.cost_status_override,
     )
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(proof, indent=2, sort_keys=True) + "\n")

@@ -35,6 +35,15 @@ capture = {
     "opencode_litellm_project": os.environ.get("OPENCODE_LITELLM_PROJECT"),
     "copilot_home": os.environ.get("COPILOT_HOME"),
     "copilot_auto_update": os.environ.get("COPILOT_AUTO_UPDATE"),
+    "copilot_model": os.environ.get("COPILOT_MODEL"),
+    "copilot_provider_base_url": os.environ.get("COPILOT_PROVIDER_BASE_URL"),
+    "copilot_provider_type": os.environ.get("COPILOT_PROVIDER_TYPE"),
+    "copilot_provider_api_key_present": bool(os.environ.get("COPILOT_PROVIDER_API_KEY")),
+    "copilot_provider_bearer_token_present": bool(os.environ.get("COPILOT_PROVIDER_BEARER_TOKEN")),
+    "copilot_provider_wire_api": os.environ.get("COPILOT_PROVIDER_WIRE_API"),
+    "copilot_provider_transport": os.environ.get("COPILOT_PROVIDER_TRANSPORT"),
+    "copilot_provider_model_id": os.environ.get("COPILOT_PROVIDER_MODEL_ID"),
+    "copilot_provider_wire_model": os.environ.get("COPILOT_PROVIDER_WIRE_MODEL"),
     "xdg_config_home": os.environ.get("XDG_CONFIG_HOME"),
     "xdg_data_home": os.environ.get("XDG_DATA_HOME"),
     "xdg_cache_home": os.environ.get("XDG_CACHE_HOME"),
@@ -883,9 +892,18 @@ def test_copilot_wrapper_defaults_to_managed_home(tmp_path: Path) -> None:
     )
 
     capture = json.loads(capture_path.read_text())
-    assert capture["args"] == ["--config-dir", str(managed_home), "--version"]
+    assert capture["args"] == ["--version"]
     assert capture["copilot_home"] == str(managed_home)
     assert capture["copilot_auto_update"] == "false"
+    assert capture["copilot_model"] == "gpt-5.5"
+    assert capture["copilot_provider_base_url"] == "http://127.0.0.1:4000/v1"
+    assert capture["copilot_provider_type"] == "openai"
+    assert capture["copilot_provider_api_key_present"] is False
+    assert capture["copilot_provider_bearer_token_present"] is True
+    assert capture["copilot_provider_wire_api"] == "responses"
+    assert capture["copilot_provider_transport"] == "http"
+    assert capture["copilot_provider_model_id"] == "gpt-5.5"
+    assert capture["copilot_provider_wire_model"] == "gpt-5.5"
     assert managed_home.is_dir()
     assert not (tmp_path / ".copilot").exists()
 
@@ -915,7 +933,98 @@ def test_copilot_wrapper_respects_explicit_config_dir(tmp_path: Path) -> None:
     capture = json.loads(capture_path.read_text())
     assert capture["args"] == ["--config-dir", str(config_dir), "--version"]
     assert capture["copilot_home"] == str(config_dir)
+    assert capture["copilot_provider_base_url"] == "http://127.0.0.1:4000/v1"
     assert config_dir.is_dir()
+
+
+def test_copilot_wrapper_uses_configured_litellm_provider(tmp_path: Path) -> None:
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    _write_fake_cli(fake_bin / "copilot")
+    capture_path = tmp_path / "capture.json"
+    managed_home = tmp_path / ".copilot-headroom"
+
+    env = _base_env(fake_bin, capture_path)
+    env["HOME"] = str(tmp_path)
+    env["COPILOT_LITELLM_HOME"] = str(managed_home)
+    env["COPILOT_LITELLM_BASE_URL"] = "http://127.0.0.1:4100"
+    env["COPILOT_LITELLM_MODEL"] = "gpt-5.4-mini"
+    env["COPILOT_LITELLM_PROVIDER_MODEL_ID"] = "gpt-5.4"
+    env["COPILOT_LITELLM_WIRE_MODEL"] = "gpt-5.4-mini"
+    env["COPILOT_LITELLM_WIRE_API"] = "responses"
+
+    subprocess.run(
+        [str(REPO_ROOT / "bin/copilot-litellm"), "--version"],
+        check=True,
+        cwd=REPO_ROOT,
+        env=env,
+    )
+
+    capture = json.loads(capture_path.read_text())
+    assert capture["copilot_home"] == str(managed_home)
+    assert capture["copilot_provider_base_url"] == "http://127.0.0.1:4100/v1"
+    assert capture["copilot_model"] == "gpt-5.4-mini"
+    assert capture["copilot_provider_model_id"] == "gpt-5.4"
+    assert capture["copilot_provider_wire_model"] == "gpt-5.4-mini"
+    assert capture["copilot_provider_wire_api"] == "responses"
+
+
+def test_copilot_wrapper_owns_provider_env_over_shell_defaults(
+    tmp_path: Path,
+) -> None:
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    _write_fake_cli(fake_bin / "copilot")
+    capture_path = tmp_path / "capture.json"
+
+    env = _base_env(fake_bin, capture_path)
+    env["HOME"] = str(tmp_path)
+    env["COPILOT_MODEL"] = "hosted-model"
+    env["COPILOT_PROVIDER_TYPE"] = "anthropic"
+    env["COPILOT_PROVIDER_BASE_URL"] = "https://example.invalid"
+    env["COPILOT_PROVIDER_WIRE_API"] = "completions"
+    env["COPILOT_PROVIDER_MODEL_ID"] = "hosted-model"
+    env["COPILOT_PROVIDER_WIRE_MODEL"] = "hosted-model"
+
+    subprocess.run(
+        [str(REPO_ROOT / "bin/copilot-litellm"), "--version"],
+        check=True,
+        cwd=REPO_ROOT,
+        env=env,
+    )
+
+    capture = json.loads(capture_path.read_text())
+    assert capture["copilot_model"] == "gpt-5.5"
+    assert capture["copilot_provider_type"] == "openai"
+    assert capture["copilot_provider_base_url"] == "http://127.0.0.1:4000/v1"
+    assert capture["copilot_provider_wire_api"] == "responses"
+    assert capture["copilot_provider_model_id"] == "gpt-5.5"
+    assert capture["copilot_provider_wire_model"] == "gpt-5.5"
+
+
+def test_copilot_wrapper_rejects_litellm_base_url_with_credentials(
+    tmp_path: Path,
+) -> None:
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    _write_fake_cli(fake_bin / "copilot")
+    capture_path = tmp_path / "capture.json"
+
+    env = _base_env(fake_bin, capture_path)
+    env["HOME"] = str(tmp_path)
+    env["COPILOT_LITELLM_BASE_URL"] = "http://user:secret@127.0.0.1:4000"
+
+    result = subprocess.run(
+        [str(REPO_ROOT / "bin/copilot-litellm"), "--version"],
+        cwd=REPO_ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 1
+    assert "COPILOT_LITELLM_BASE_URL" in result.stderr
+    assert not capture_path.exists()
 
 
 def test_copilot_wrapper_rejects_native_config_dir_by_default(

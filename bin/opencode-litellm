@@ -23,6 +23,27 @@ from litellm_proxy_headroom.agent_cli.managed_home import (  # noqa: E402
 MANAGED_HOME_NAME = ".opencode-headroom"
 PROVIDER_ID = "litellm"
 MODEL_RE = re.compile(r"^[A-Za-z0-9_.:/-]+$")
+NO_MODEL_COMMANDS = {
+    "acp",
+    "agent",
+    "attach",
+    "auth",
+    "completion",
+    "debug",
+    "export",
+    "github",
+    "help",
+    "import",
+    "mcp",
+    "models",
+    "pr",
+    "serve",
+    "session",
+    "stats",
+    "uninstall",
+    "upgrade",
+    "web",
+}
 
 
 def die(message: str, code: int = 1) -> None:
@@ -68,6 +89,13 @@ def has_model_arg(argv: list[str]) -> bool:
         if arg.startswith("--model="):
             return True
     return expect_value
+
+
+def should_add_model_arg(argv: list[str]) -> bool:
+    if has_model_arg(argv):
+        return False
+    first_command = next((arg for arg in argv if not arg.startswith("-")), "")
+    return first_command not in NO_MODEL_COMMANDS
 
 
 def model_config(
@@ -195,7 +223,9 @@ def main(argv: list[str]) -> int:
             os.environ["OPENCODE_LITELLM_PROJECT"] = project
 
     executable = real_opencode()
-    extra_args = [] if has_model_arg(argv) else ["--model", f"{PROVIDER_ID}/{model}"]
+    extra_args = (
+        ["--model", f"{PROVIDER_ID}/{model}"] if should_add_model_arg(argv) else []
+    )
     os.execvpe(executable, [executable, *extra_args, *argv], os.environ.copy())
     return 127
 

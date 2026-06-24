@@ -807,6 +807,29 @@ def test_opencode_wrapper_respects_existing_model_argument(tmp_path: Path) -> No
     ]
 
 
+def test_opencode_wrapper_does_not_add_model_to_management_commands(
+    tmp_path: Path,
+) -> None:
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    _write_fake_cli(fake_bin / "opencode")
+    capture_path = tmp_path / "capture.json"
+    managed_home = tmp_path / "opencode-home"
+
+    env = _base_env(fake_bin, capture_path)
+    env["OPENCODE_LITELLM_HOME"] = str(managed_home)
+
+    subprocess.run(
+        [str(REPO_ROOT / "bin/opencode-litellm"), "models", "litellm"],
+        check=True,
+        cwd=REPO_ROOT,
+        env=env,
+    )
+
+    capture = json.loads(capture_path.read_text())
+    assert capture["args"] == ["models", "litellm"]
+
+
 def test_opencode_wrapper_rejects_litellm_base_url_with_credentials(
     tmp_path: Path,
 ) -> None:

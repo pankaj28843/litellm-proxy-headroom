@@ -344,8 +344,10 @@ and references `LITELLM_MASTER_KEY` through `{env:LITELLM_MASTER_KEY}` instead
 of copying the key. Set `OPENCODE_LITELLM_HOME` to move the managed home. Set
 `OPENCODE_LITELLM_BASE_URL` and `OPENCODE_LITELLM_ANALYTICS_URL` when services
 are not on `http://127.0.0.1:4000` and `http://127.0.0.1:8010`. The wrapper
-pins `--model litellm/gpt-5.5` unless the command already supplies `--model`.
-Real OpenCode provider proof is tracked separately from config generation.
+pins `--model litellm/gpt-5.5` for run-style commands unless the command
+already supplies `--model`. `opencode models litellm` and a real
+`gpt-5.4-mini` smoke run have reached LiteLLM with marker-correlated provider
+usage; practical `gpt-5.5` series proof is still pending.
 
 ## Agent-90 Usefulness Harness
 

@@ -23,6 +23,9 @@ SDK/MCP docs than CLI provider routing.
 | OpenCode | Route supported, cache usefulness unproven | `~/.opencode-headroom` | Official OpenCode docs support custom OpenAI-compatible providers through `@ai-sdk/openai-compatible`, `options.baseURL`, model entries, and `{env:...}` or `{file:...}` secret references. | Practical `gpt-5.5` series routes through LiteLLM, but provider-reported cached input and observed cost are absent, so no cache/cost usefulness claim is made. |
 | GitHub Copilot CLI | Isolation wrapper, BYOK route unsupported | `~/.copilot-headroom` | Local help and GitHub docs expose `COPILOT_HOME`/`--config-dir`, MCP/custom-agent config, and hosted `--model` choices. They do not expose a local OpenAI-compatible base URL/API-key provider override. | Wrapper isolates config/state only. Do not claim LiteLLM routing unless GitHub documents a provider/base-URL surface for Copilot CLI. |
 
+For the latest local runtime artifact pointers behind these labels, see
+[Multi-CLI Proof Contract](multi-cli-proof-contract.md#latest-evidence-pointers).
+
 ## Wrapper Contract
 
 - Generated files live in the managed home or test temp homes, never native

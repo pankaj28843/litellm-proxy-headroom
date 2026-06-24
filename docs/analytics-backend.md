@@ -351,8 +351,10 @@ For compression usefulness claims, the smoke suite and dashboard stats are not
 enough. Use the README's Agent-90 Usefulness Harness with actual
 `codex exec --json` direct-vs-proxy runs. Smoke with `gpt-5.4-mini`; judge
 practical usefulness with `gpt-5.5`; compare aggregate provider-reported usage,
-cost when present, and cached-input behavior across the whole Codex
-turn/provider-call sequence.
+cost when Codex reports it, and cached-input behavior across the whole Codex
+turn/provider-call sequence. When Codex exposes no observed lane cost, mark
+cost unavailable and unestimated rather than deriving dollars from local
+pricing tables.
 
 The synthetic smoke suite is:
 

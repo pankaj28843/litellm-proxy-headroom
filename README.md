@@ -402,9 +402,13 @@ cost, the cost comparison is marked `missing` rather than estimated.
 `summary.json` also records `mvp_usefulness`: total tokens must not regress,
 cache-adjusted input must not regress using cached input multiplier `0.10`,
 cache-hit ratio must not drop by more than `0.05`, and cost must not regress
-when both lanes report it. A measured regression exits non-zero even when both
-Codex lanes and the DB query succeed. With `--query-db`, the proxy lane also
-writes `db-proof.sql`,
+when both lanes report it. It also records `completion_contract`: when both
+lanes report observed cost, the passing scope is `provider_usage_cache_cost`;
+when Codex reports no lane cost, the passing scope can only be
+`provider_usage_cache` with `cost_status="unavailable"`. Missing cost is never
+estimated. A measured regression or incomplete token summary exits non-zero
+even when both Codex lanes and the DB query succeed. With `--query-db`, the
+proxy lane also writes `db-proof.sql`,
 `db-proof.stdout.txt`, `db-proof.stderr.txt`, and `db-proof-result.json`. The
 proxy lane sets `LITELLM_PROXY_RUN_MARKER=<marker>`; `bin/codex-litellm` maps
 that opt-in value to `X-LiteLLM-Proxy-Run`; it also sends
@@ -417,7 +421,8 @@ also sets `CODEX_LITELLM_CLIENT=codex`; the wrapper sends it as
 the run marker when present and falls back to the proxy lane time window plus
 `--db-window-grace-seconds` for buffered ingestion. A proxy DB proof row is
 necessary but not sufficient: usefulness requires comparing provider-reported
-direct-vs-proxy tokens, cost, and cached input behavior.
+direct-vs-proxy tokens and cached input behavior, plus observed cost only when
+Codex reports it.
 
 Keep LiteLLM `general_settings.forward_client_headers_to_llm_api` disabled in
 this deployment. LiteLLM forwards arbitrary `x-*` request headers upstream when

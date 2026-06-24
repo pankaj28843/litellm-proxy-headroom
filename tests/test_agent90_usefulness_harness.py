@@ -698,6 +698,13 @@ def test_token_summary_comparison_marks_cost_missing_when_unreported() -> None:
     assert comparison["mvp_usefulness"]["status"] == "incomplete"
     assert comparison["mvp_usefulness"]["fail_reasons"] == []
     assert comparison["mvp_usefulness"]["missing_reasons"] == ["cost_missing"]
+    assert comparison["completion_contract"] == {
+        "status": "pass",
+        "scope": "provider_usage_cache",
+        "cost_status": "unavailable",
+        "fail_reasons": [],
+        "missing_reasons": ["cost_missing"],
+    }
 
 
 def test_agent90_usefulness_execute_preflight_failure_skips_lanes(
@@ -985,6 +992,13 @@ def test_agent90_usefulness_execute_writes_token_summary_artifacts(
     assert summary["token_comparison"]["mvp_usefulness"]["status"] == "pass"
     assert summary["token_comparison"]["mvp_usefulness"]["fail_reasons"] == []
     assert summary["token_comparison"]["mvp_usefulness"]["missing_reasons"] == []
+    assert summary["token_comparison"]["completion_contract"] == {
+        "status": "pass",
+        "scope": "provider_usage_cache_cost",
+        "cost_status": "observed",
+        "fail_reasons": [],
+        "missing_reasons": [],
+    }
     assert json.loads((artifact_dir / "proxy" / "environment.json").read_text()) == {
         "CODEX_LITELLM_ANALYTICS_URL": "http://127.0.0.1:8010",
         "CODEX_LITELLM_BASE_URL": "http://127.0.0.1:4000/v1",
@@ -1037,6 +1051,62 @@ def test_agent90_usefulness_execute_writes_token_summary_artifacts(
     assert db_result["returncode"] == 0
     assert db_result["stdin"].endswith("proxy/db-proof.sql")
     assert summary["proxy_db_result"]["returncode"] == 0
+
+
+def test_agent90_usefulness_execute_passes_usage_cache_when_cost_unavailable(
+    tmp_path: Path,
+) -> None:
+    direct_bin = tmp_path / "direct-codex"
+    proxy_bin = tmp_path / "proxy-codex"
+    direct_bin.write_text(
+        "#!/usr/bin/env python3\n"
+        "print('input=1000 cached=800 output=100 reasoning=40 total=1100')\n"
+    )
+    proxy_bin.write_text(
+        "#!/usr/bin/env python3\n"
+        "print('input=900 cached=720 output=90 reasoning=30 total=990')\n"
+    )
+    direct_bin.chmod(0o755)
+    proxy_bin.chmod(0o755)
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/e2e_agent90_usefulness.py",
+            "--marker",
+            "AGENT90_COST_MISSING_OK",
+            "--artifact-root",
+            str(tmp_path / "artifacts"),
+            "--task-lines",
+            "3",
+            "--codex-bin",
+            str(direct_bin),
+            "--proxy-bin",
+            str(proxy_bin),
+            "--skip-preflight",
+            "--execute",
+        ],
+        check=True,
+        cwd=REPO_ROOT,
+        text=True,
+        capture_output=True,
+    )
+
+    artifact_dir = tmp_path / "artifacts" / "AGENT90_COST_MISSING_OK"
+    summary = json.loads((artifact_dir / "summary.json").read_text())
+
+    assert "agent90_usefulness=ok" in result.stdout
+    assert "scope=provider_usage_cache" in result.stdout
+    assert "cost=unavailable" in result.stdout
+    assert summary["token_comparison"]["cost"]["status"] == "missing"
+    assert summary["token_comparison"]["mvp_usefulness"]["status"] == "incomplete"
+    assert summary["token_comparison"]["completion_contract"] == {
+        "status": "pass",
+        "scope": "provider_usage_cache",
+        "cost_status": "unavailable",
+        "fail_reasons": [],
+        "missing_reasons": ["cost_missing"],
+    }
 
 
 def test_agent90_usefulness_execute_fails_when_cache_accounting_regresses(

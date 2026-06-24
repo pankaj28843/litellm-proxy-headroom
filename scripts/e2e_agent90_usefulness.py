@@ -466,6 +466,52 @@ def _evaluate_usefulness(comparison: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _completion_contract(comparison: dict[str, Any]) -> dict[str, Any]:
+    """Final proof contract for environments where observed lane cost is absent."""
+
+    mvp = comparison["mvp_usefulness"]
+    cost = comparison["cost"]
+    if mvp["fail_reasons"]:
+        return {
+            "status": "fail",
+            "scope": "provider_usage_cache",
+            "cost_status": cost["status"],
+            "fail_reasons": list(mvp["fail_reasons"]),
+            "missing_reasons": list(mvp["missing_reasons"]),
+        }
+    if comparison["status"] != "complete":
+        return {
+            "status": "incomplete",
+            "scope": "provider_usage_cache",
+            "cost_status": cost["status"],
+            "fail_reasons": [],
+            "missing_reasons": ["token_summary_incomplete"],
+        }
+    if cost["status"] == "complete":
+        return {
+            "status": "pass",
+            "scope": "provider_usage_cache_cost",
+            "cost_status": "observed",
+            "fail_reasons": [],
+            "missing_reasons": [],
+        }
+    if mvp["missing_reasons"] == ["cost_missing"]:
+        return {
+            "status": "pass",
+            "scope": "provider_usage_cache",
+            "cost_status": "unavailable",
+            "fail_reasons": [],
+            "missing_reasons": ["cost_missing"],
+        }
+    return {
+        "status": "incomplete",
+        "scope": "provider_usage_cache",
+        "cost_status": cost["status"],
+        "fail_reasons": [],
+        "missing_reasons": list(mvp["missing_reasons"]),
+    }
+
+
 def _compare_token_summaries(results: list[dict[str, Any]]) -> dict[str, Any]:
     summaries = {
         result["lane"]: result.get("token_summary")
@@ -531,6 +577,7 @@ def _compare_token_summaries(results: list[dict[str, Any]]) -> dict[str, Any]:
         },
     }
     comparison["mvp_usefulness"] = _evaluate_usefulness(comparison)
+    comparison["completion_contract"] = _completion_contract(comparison)
     return comparison
 
 
@@ -1458,8 +1505,20 @@ def execute_plan(
             file=sys.stderr,
         )
         return 2
+    completion_contract = summary["token_comparison"]["completion_contract"]
+    if completion_contract["status"] != "pass":
+        reasons = ",".join(completion_contract["missing_reasons"])
+        print(
+            "agent90_usefulness=failed "
+            f"completion_contract={completion_contract['status']} "
+            f"reasons={reasons} artifact_dir={artifact_dir}",
+            file=sys.stderr,
+        )
+        return 2
     print(
         "agent90_usefulness=ok "
+        f"scope={completion_contract['scope']} "
+        f"cost={completion_contract['cost_status']} "
         f"marker={plan['marker']} artifact_dir={artifact_dir} "
         f"proxy_db_query={query_path}"
     )

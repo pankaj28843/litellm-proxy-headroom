@@ -36,6 +36,9 @@ only, not an operator-facing service in this repository.
   and `./bin/codex-litellm`, then compare aggregate provider-reported usage
   across the whole Codex turn/provider-call sequence: input, cached input,
   output, reasoning, total tokens, and cost when Codex reports it.
+- When Codex does not report observed lane cost, the proof may close only on
+  provider usage/cache, with cost explicitly marked unavailable and
+  unestimated in artifacts and docs.
 - If aggregate direct-vs-proxy proof is absent or failing, docs and analytics
   surfaces must say usefulness is unproven or not useful.
 

@@ -36,6 +36,8 @@ def test_dashboard_smoke_payload_models_estimates_cost_and_negative_savings() ->
         usage["measurement_source"]: usage for usage in provider_call["token_usage"]
     }
 
+    assert payload["request"]["metadata"]["analytics_data_scope"] == "test"
+    assert payload["request"]["metadata"]["smoke"] is True
     assert payload["execution"]["tokens_saved"] == -100
     assert payload["execution"]["compression_ratio"] == "1.125"
     assert payload["config"]["strategy_name"] == "dashboard-strategy"

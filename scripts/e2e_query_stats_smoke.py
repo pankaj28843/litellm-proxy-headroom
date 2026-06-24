@@ -74,6 +74,7 @@ async def main() -> int:
         "QUERY_STATS_SMOKE_MARKER", f"query-stats-smoke-{int(time.time())}"
     )
     payload, filters = _custom_payload(marker)
+    filters = {**filters, "data_scope": "test"}
     request_key = f"{marker}-request"
 
     async with httpx.AsyncClient(timeout=20.0) as client:

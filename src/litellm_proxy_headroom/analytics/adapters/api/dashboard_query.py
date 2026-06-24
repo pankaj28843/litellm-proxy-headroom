@@ -8,7 +8,7 @@ from urllib.parse import urlencode
 
 from fastapi import Depends, HTTPException, Query
 
-from ...application.query_filters import AnalyticsFilters
+from ...application.query_filters import AnalyticsFilters, DataScope
 
 type DashboardRangePreset = Literal["15m", "1h", "24h", "7d", "30d", "all", "custom"]
 
@@ -73,6 +73,7 @@ class DashboardQuery:
             "team_id": self.filters.team_id,
             "status": self.filters.status,
             "negative_savings": self.filters.negative_savings,
+            "data_scope": self.filters.data_scope,
             "live": self.live,
             "paused": self.paused,
         }
@@ -103,6 +104,7 @@ async def get_dashboard_query(
     team_id: Annotated[str | None, Query(max_length=128)] = None,
     status: Annotated[str | None, Query(max_length=32)] = None,
     negative_savings: Annotated[str | None, Query(max_length=8)] = None,
+    data_scope: Annotated[DataScope, Query()] = "real",
     live: bool = True,
     paused: bool = False,
 ) -> DashboardQuery:
@@ -132,6 +134,7 @@ async def get_dashboard_query(
                 negative_savings,
                 field_name="negative_savings",
             ),
+            data_scope=data_scope,
         ),
         preset=selected_preset,
         explicit_from=explicit_from,

@@ -103,7 +103,7 @@ if [[ "${has_allowed_tools}" -eq 0 ]]; then
   extra_args+=(--allowedTools "mcp__analytics__*")
 fi
 if [[ "${has_model}" -eq 0 ]]; then
-  extra_args+=(--model "${CLAUDE_LITELLM_MODEL:-gpt-5.4-mini}")
+  extra_args+=(--model "${CLAUDE_LITELLM_MODEL:-gpt-5.5}")
 fi
 
 exec "${real_claude}" "${extra_args[@]}" "$@"

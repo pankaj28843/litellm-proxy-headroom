@@ -2,6 +2,7 @@
 .compact-metric,
 .breakdown-panel,
 .dashboard-band,
+.proof-status,
 .summary-section {
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -9,9 +10,27 @@
   box-shadow: var(--shadow);
 }
 
+.proof-status,
 .summary-section,
 .dashboard-band {
   padding: 1rem;
+}
+
+.proof-status {
+  border-left: 4px solid var(--warning);
+}
+
+.proof-status .section-heading {
+  align-items: flex-start;
+  gap: 1rem;
+}
+
+.proof-status .section-heading > div {
+  min-width: 0;
+}
+
+.proof-status .section-heading p {
+  max-width: 58rem;
 }
 
 .metric-card,

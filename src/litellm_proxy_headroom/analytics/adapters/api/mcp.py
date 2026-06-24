@@ -52,7 +52,11 @@ def create_analytics_mcp_server(
 
     @mcp.tool(
         name="litellm_proxy_analytics_retrieve_chunk",
-        description="Retrieve a compressed chunk by CCR hash from analytics storage.",
+        description=(
+            "Retrieve stored compressed context by CCR hash from analytics storage. "
+            "Use this for compression markers such as 'Retrieve more: hash=...' "
+            "or '<<ccr:...>>'."
+        ),
         annotations={
             "readOnlyHint": False,
             "destructiveHint": False,

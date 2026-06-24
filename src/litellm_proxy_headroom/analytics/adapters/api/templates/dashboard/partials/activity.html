@@ -1,7 +1,7 @@
 <section class="dashboard-band" aria-labelledby="activity-heading">
   <div class="section-heading">
     <h2 id="activity-heading">Activity And Risk</h2>
-    <p>Cache, retrieval, provider delta, and failure signals</p>
+    <p>Cache, retrieval, provider usage, and failure signals</p>
   </div>
 
   <div class="compact-metric-grid">
@@ -44,8 +44,8 @@
         <dd>{{ stats.provider_cache.provider_cache_hit_percent|percent }}</dd>
       </div>
       <div>
-        <dt>Estimated before delta</dt>
-        <dd>{{ stats.provider_estimate_delta.estimated_before_provider_input_delta|signed_integer }}</dd>
+        <dt>Provider total tokens</dt>
+        <dd>{{ stats.provider_estimate_delta.provider_reported_total_tokens|integer }}</dd>
       </div>
     </dl>
     <dl>

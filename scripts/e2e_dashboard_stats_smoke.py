@@ -224,6 +224,7 @@ async def main() -> int:
     secondary_model = f"dashboard-secondary-model-{suffix}"
     secondary_strategy = f"dashboard-secondary-strategy-{suffix}"
     filters = {
+        "data_scope": "test",
         "preset": "all",
         "provider": provider,
         "model": model,
@@ -326,7 +327,7 @@ async def main() -> int:
         )
         unfiltered_provider_breakdown = await client.get(
             f"{backend_url}/stats/breakdown",
-            params={"group_by": "provider", "limit": 25},
+            params={"data_scope": "test", "group_by": "provider", "limit": 25},
         )
         records = await client.get(
             f"{backend_url}/records/compression",
@@ -393,6 +394,7 @@ async def main() -> int:
     provider_cache = data["provider_cache"]
     cost = data["cost"]
     distribution = data["savings_distribution"]
+    usefulness = data["usefulness"]
     records_data = records.json()
     simulation_data = simulation.json()
     simulation_runs_data = simulation_runs.json()
@@ -440,6 +442,12 @@ async def main() -> int:
         return _fail("billing_equivalent_input_mismatch")
     if provider_cache["billing_equivalent_savings_percent"] != 42.0:
         return _fail("billing_equivalent_savings_mismatch")
+    if (
+        usefulness["status"] != "unproven"
+        or usefulness["cache_evidence_scope"]
+        != "whole Codex turn/provider-call sequence"
+    ):
+        return _fail("usefulness_status_mismatch")
     if provider_delta["estimated_before_provider_input_delta"] != 300:
         return _fail("estimated_before_delta_mismatch")
     if provider_delta["estimated_after_provider_input_delta"] != 20:
@@ -478,6 +486,11 @@ async def main() -> int:
             "Provider cache hit" not in html or "Combined saving" not in html
         ):
             return _fail(f"{surface_name}_missing_provider_cache_metrics")
+        if surface_name in {"dashboard_html", "partial_live"} and (
+            "Primary usefulness unproven" not in html
+            or "whole Codex turn/provider-call sequence" not in html
+        ):
+            return _fail(f"{surface_name}_missing_usefulness_status")
         if SENSITIVE_CONTENT in html or "provider_shape" in html:
             return _fail(f"{surface_name}_leaked_sensitive_content")
     if simulation_command["simulation_key"] not in partial_simulations.text:

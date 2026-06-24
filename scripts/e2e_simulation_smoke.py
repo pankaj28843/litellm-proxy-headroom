@@ -39,6 +39,7 @@ def _simulation_payload(marker: str) -> tuple[dict[str, Any], dict[str, Any]]:
             "reasoning_token_rate": "0.000003",
         },
         "selected_filter": {
+            "data_scope": "test",
             "provider": provider,
             "model": model,
             "strategy": strategy,

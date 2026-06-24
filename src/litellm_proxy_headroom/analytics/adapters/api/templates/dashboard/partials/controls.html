@@ -22,6 +22,15 @@
     <input type="hidden" name="paused" value="{{ 'true' if query.paused else 'false' }}">
 
     <label>
+      <span>Data</span>
+      <select name="data_scope">
+        <option value="real" {% if query.filters.data_scope == 'real' %}selected{% endif %}>Operational</option>
+        <option value="test" {% if query.filters.data_scope == 'test' %}selected{% endif %}>Test/demo</option>
+        <option value="all" {% if query.filters.data_scope == 'all' %}selected{% endif %}>All</option>
+      </select>
+    </label>
+
+    <label>
       <span>Range</span>
       <select name="preset">
         {% for preset in presets %}

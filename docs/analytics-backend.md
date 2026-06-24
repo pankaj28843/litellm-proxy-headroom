@@ -172,8 +172,11 @@ Read APIs:
 - `GET /simulations/runs/{simulation_key}`
 
 The stats, breakdown, records, and dashboard endpoints support filters for time
-range, provider, model, strategy, tenant, team, status, and negative savings
-where applicable. Large record reads are paginated.
+range, provider, model, strategy, tenant, team, status, negative savings, and
+data scope where applicable. `data_scope=real` is the default and excludes
+rows marked in request metadata as smoke/demo/synthetic/test data. Use
+`data_scope=test` for seeded validation rows and `data_scope=all` only for an
+explicit mixed-scope investigation. Large record reads are paginated.
 
 ## Dashboard
 
@@ -203,12 +206,14 @@ Supported dashboard query controls:
 | `tenant_id`, `team_id` | Tenant and team filters. |
 | `status` | Execution status filter such as `succeeded`, `failed`, or `running`. |
 | `negative_savings` | `true` for expanded-token executions only, `false` for non-negative only. |
+| `data_scope` | `real` for operational rows, `test` for smoke/demo/synthetic/test rows, or `all` for both. |
 | `live`, `paused` | Live polling state. |
 
-The first viewport is the operational story: Current Impact, then Activity And
-Risk, then Investigation, Recent Records, and Simulation Replay. Those panels
-are computed from source rows through the same read models as `/stats/dashboard`,
-`/stats/breakdown`, `/records/compression`, and `/simulations/runs`.
+The first viewport is the operational story: primary proof status, Current
+Impact, then Activity And Risk, then Investigation, Recent Records, and
+Simulation Replay. Those panels are computed from source rows through the same
+read models as `/stats/dashboard`, `/stats/breakdown`, `/records/compression`,
+and `/simulations/runs`.
 
 Read the dashboard numbers as recomputed source-row totals:
 
@@ -222,22 +227,24 @@ Read the dashboard numbers as recomputed source-row totals:
 | Provider token usage | `token_usage_breakdowns` rows with `measurement_source='provider_reported'`, joined through matching provider calls. These fields are independent of compression savings. |
 | Provider cache hit | Provider-reported `cached_input_tokens / input_tokens`. This reflects prompt-cache reuse seen by the upstream provider, not backend cache events. |
 | Billing-equivalent saving | `(estimated_before_input - (provider_uncached_input + provider_cached_input * ANALYTICS_CACHED_INPUT_COST_MULTIPLIER)) / estimated_before_input`. This is a pricing-equivalent input estimate, not a strict raw-token reduction. |
-| Provider estimate deltas | Estimated-before and estimated-after input token rows minus provider-reported input tokens. |
+| Provider estimate deltas | Diagnostic only. Estimated-before and estimated-after input token rows minus provider-reported input tokens must not be used as operator-facing value proof. |
 | Cost fields | Estimated baseline rows from `cost_calculations` compared with measured `provider_calls.cost_total`. |
 | Cache fields | `cache_activities` rows joined to matching executions. |
 | Negative savings | Executions where `tokens_saved < 0`. |
 | Failures | Executions where `status='failed'`; failed rows can still have provider calls and token usage. |
+| Primary usefulness | `usefulness.status` and `usefulness.cache_evidence_scope` state whether the dashboard has a passed direct-vs-proxy proof. One-sided dashboard rows remain `unproven`; proof requires aggregate Codex CLI usage/cost/cache comparison over the whole turn/provider-call sequence. |
 
 Empty states are truthful. If no persisted compression executions match the
-filters, the page tells the operator to run the dashboard smoke seed or widen
-the range. To create demo evidence without a paid model call:
+filters, the default operational view tells the operator to select test/demo
+data only when validating fixtures or widen the range. To create demo evidence
+without a paid model call:
 
 ```bash
 DASHBOARD_STATS_SMOKE_MARKER=dashboard-demo-$(date +%s) \
   uv run python scripts/e2e_dashboard_stats_smoke.py
 ```
 
-Then open `/dashboard?preset=all&provider=<printed-provider>`.
+Then open `/dashboard?data_scope=test&preset=all&provider=<printed-provider>`.
 
 Templates must not render prompt text, response text, original chunk content, or
 compressed chunk content. Routine dashboard surfaces show identifiers, hashes,
@@ -328,7 +335,7 @@ docker compose logs --tail=200 phoenix | rg "trace|span|otlp|error" -i
 
 ## Validation Order
 
-For analytics changes, prove usefulness before unit tests:
+For analytics plumbing changes, prove runtime behavior before unit tests:
 
 1. Backend readiness and migration head.
 2. Runtime ingest/retrieve/stats/metrics smoke with a unique marker.
@@ -339,6 +346,13 @@ For analytics changes, prove usefulness before unit tests:
 7. `make e2e` for the real LiteLLM-controlled path when ChatGPT auth is
    available.
 8. Only then run `uv run pytest`, Ruff, and migration downgrade/upgrade.
+
+For compression usefulness claims, the smoke suite and dashboard stats are not
+enough. Use the README's Agent-90 Usefulness Harness with actual
+`codex exec --json` direct-vs-proxy runs. Smoke with `gpt-5.4-mini`; judge
+practical usefulness with `gpt-5.5`; compare aggregate provider-reported usage,
+cost when present, and cached-input behavior across the whole Codex
+turn/provider-call sequence.
 
 The synthetic smoke suite is:
 

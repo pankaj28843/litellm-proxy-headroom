@@ -14,6 +14,9 @@ def test_compose_wires_litellm_to_persistent_chatgpt_auth_and_phoenix() -> None:
     assert "./data/chatgpt:/data/chatgpt" in litellm["volumes"]
     assert litellm["environment"]["CONFIG_FILE_PATH"] == "/app/config/litellm.yaml"
     assert litellm["environment"]["CHATGPT_TOKEN_DIR"] == "/data/chatgpt"
+    assert litellm["environment"]["CHATGPT_DEFAULT_INSTRUCTIONS"] == (
+        "${CHATGPT_DEFAULT_INSTRUCTIONS:- }"
+    )
     assert litellm["environment"]["LITELLM_OTEL_V2"] == "true"
     assert (
         litellm["environment"]["PHOENIX_COLLECTOR_HTTP_ENDPOINT"]
@@ -27,6 +30,10 @@ def test_compose_wires_litellm_to_persistent_chatgpt_auth_and_phoenix() -> None:
         "http://analytics-backend:8010"
     )
     assert litellm["environment"]["HEADROOM_CCR_BACKEND"] == "analytics-postgres"
+    assert (
+        litellm["environment"]["HEADROOM_SAVINGS_PROFILE"]
+        == "${HEADROOM_SAVINGS_PROFILE:-agent-90}"
+    )
     assert litellm["command"] == [
         "litellm",
         "--config",
@@ -45,6 +52,13 @@ def test_default_stack_does_not_run_headroom_proxy_or_mcp_containers() -> None:
     assert "headroom" not in services
     assert "headroom-mcp" not in services
     assert all("dashboard" not in name for name in services)
+
+
+def test_litellm_service_does_not_masquerade_as_headroom_wrap_stack() -> None:
+    environment = _compose()["services"]["litellm"]["environment"]
+
+    assert "HEADROOM_AGENT_TYPE" not in environment
+    assert "HEADROOM_STACK" not in environment
 
 
 def test_compose_keeps_user_facing_services_bound_to_localhost() -> None:

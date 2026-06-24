@@ -106,6 +106,7 @@ services:
       CONFIG_FILE_PATH: /app/config/litellm.yaml
       CHATGPT_TOKEN_DIR: /data/chatgpt
       CHATGPT_AUTH_FILE: ${CHATGPT_AUTH_FILE:-auth.json}
+      CHATGPT_DEFAULT_INSTRUCTIONS: ${CHATGPT_DEFAULT_INSTRUCTIONS:- }
       LITELLM_OTEL_V2: "true"
       OTEL_SERVICE_NAME: litellm-proxy
       OTEL_EXPORTER: otlp_http
@@ -124,6 +125,7 @@ services:
       HEADROOM_ANALYTICS_SHUTDOWN_TIMEOUT_SECONDS: "2.0"
       HEADROOM_CCR_BACKEND: analytics-postgres
       HEADROOM_CCR_ANALYTICS_TIMEOUT_SECONDS: "0.75"
+      HEADROOM_SAVINGS_PROFILE: ${HEADROOM_SAVINGS_PROFILE:-agent-90}
     expose:
       - "4000"
     ports:

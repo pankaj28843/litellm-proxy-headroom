@@ -3,7 +3,7 @@ from __future__ import annotations
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ...application.dashboard_schemas import DashboardStats
+from ...application.dashboard_schemas import DashboardStats, UsefulnessStatus
 from ...application.query_filters import AnalyticsFilters
 from .dashboard_cache_queries import cache_dashboard_stats
 from .dashboard_counts import dashboard_counts
@@ -73,4 +73,18 @@ async def dashboard_stats(
         ),
         cost=await cost_stats(session, execution_ids=execution_ids, filters=filters),
         cache=await cache_dashboard_stats(session, execution_ids),
+        usefulness=_usefulness_status(),
+    )
+
+
+def _usefulness_status() -> UsefulnessStatus:
+    return UsefulnessStatus(
+        status="unproven",
+        label="Primary usefulness unproven",
+        detail=(
+            "These are one-sided operational aggregates. Primary usefulness "
+            "requires a passed direct-vs-proxy Codex CLI proof with provider "
+            "usage/cost and cache hit measured across the whole turn sequence."
+        ),
+        cache_evidence_scope="whole Codex turn/provider-call sequence",
     )

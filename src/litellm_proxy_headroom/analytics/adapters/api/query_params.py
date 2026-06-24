@@ -5,7 +5,7 @@ from typing import Annotated
 
 from fastapi import Depends, Query
 
-from ...application.query_filters import AnalyticsFilters
+from ...application.query_filters import AnalyticsFilters, DataScope
 
 
 async def get_analytics_filters(
@@ -18,6 +18,7 @@ async def get_analytics_filters(
     team_id: Annotated[str | None, Query(max_length=128)] = None,
     status: Annotated[str | None, Query(max_length=32)] = None,
     negative_savings: bool | None = None,
+    data_scope: Annotated[DataScope, Query()] = "real",
 ) -> AnalyticsFilters:
     return AnalyticsFilters(
         started_from=started_from,
@@ -29,6 +30,7 @@ async def get_analytics_filters(
         team_id=team_id,
         status=status,
         negative_savings=negative_savings,
+        data_scope=data_scope,
     )
 
 

@@ -51,12 +51,19 @@ def token_usage_from_response(response: Any) -> TokenUsageBreakdownCommand | Non
         return None
 
     prompt_details = _nested(usage, "prompt_tokens_details")
+    input_details = _nested(usage, "input_tokens_details")
+    if not input_details:
+        input_details = _nested(usage, "input_token_details")
     completion_details = _nested(usage, "completion_tokens_details")
+    output_details = _nested(usage, "output_tokens_details")
+    if not output_details:
+        output_details = _nested(usage, "output_token_details")
     metadata = provider_response_metadata(response)
     additional_usage = _nested(metadata, "additional_usage_values")
 
     cached_tokens = (
         _get(prompt_details, "cached_tokens")
+        or _get(input_details, "cached_tokens")
         or _get(usage, "cache_read_input_tokens")
         or _get(usage, "cached_input_tokens")
         or _get(additional_usage, "cache_read_input_tokens")
@@ -65,6 +72,8 @@ def token_usage_from_response(response: Any) -> TokenUsageBreakdownCommand | Non
     cache_write_tokens = (
         _get(prompt_details, "cache_creation_tokens")
         or _get(prompt_details, "cache_write_tokens")
+        or _get(input_details, "cache_creation_tokens")
+        or _get(input_details, "cache_write_tokens")
         or _get(usage, "cache_creation_input_tokens")
         or _get(usage, "cache_write_input_tokens")
         or _get(additional_usage, "cache_creation_input_tokens")
@@ -72,6 +81,7 @@ def token_usage_from_response(response: Any) -> TokenUsageBreakdownCommand | Non
     )
     reasoning_tokens = (
         _get(completion_details, "reasoning_tokens")
+        or _get(output_details, "reasoning_tokens")
         or _get(usage, "reasoning_tokens")
         or _get(usage, "thinking_tokens")
         or _get(additional_usage, "reasoning_tokens")
@@ -165,7 +175,11 @@ def _usage_object_to_dict(usage: Any) -> dict[str, Any]:
         "reasoning_tokens",
         "thinking_tokens",
         "prompt_tokens_details",
+        "input_tokens_details",
+        "input_token_details",
         "completion_tokens_details",
+        "output_tokens_details",
+        "output_token_details",
         "cache_creation_input_tokens",
         "cache_write_input_tokens",
         "cache_read_input_tokens",

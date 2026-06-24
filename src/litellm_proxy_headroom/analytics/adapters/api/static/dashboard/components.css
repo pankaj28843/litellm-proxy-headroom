@@ -160,6 +160,11 @@ button,
   color: var(--info);
 }
 
+.status-pill--warning {
+  background: var(--warning-bg);
+  color: var(--warning);
+}
+
 .status-pill--neutral {
   background: var(--neutral-bg);
   color: var(--muted);

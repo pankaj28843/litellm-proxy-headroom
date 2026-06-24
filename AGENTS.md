@@ -26,6 +26,19 @@ only, not an operator-facing service in this repository.
 - Any unavoidable compatibility shim must be isolated, named as a shim, covered by a regression test, and justified in docs before it is expanded.
 - Usefulness comes before unit tests. For integration fixes, first prove the real workflow works with runtime evidence: the relevant localhost endpoint, Compose service, browser network capture, logs, or trace output. Add or update unit/config tests after that evidence, not as the primary proof.
 
+## Primary Usefulness Rule
+
+- Do not treat dashboard totals, estimated tokenizer deltas, smoke/demo rows, or
+  one selected provider call as proof that compression is useful.
+- For Codex/LiteLLM usefulness work, smoke-test only with `gpt-5.4-mini`.
+  Practical proof uses `gpt-5.5`.
+- Primary proof must use actual `codex exec --json` turns on both direct Codex
+  and `./bin/codex-litellm`, then compare aggregate provider-reported usage
+  across the whole Codex turn/provider-call sequence: input, cached input,
+  output, reasoning, total tokens, and cost when Codex reports it.
+- If aggregate direct-vs-proxy proof is absent or failing, docs and analytics
+  surfaces must say usefulness is unproven or not useful.
+
 ## Command Notes
 
 - Do not use the `rtk` command prefix in this repo unless the user explicitly reverses that instruction.

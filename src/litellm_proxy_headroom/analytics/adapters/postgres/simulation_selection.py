@@ -6,7 +6,7 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ...application.query_filters import AnalyticsFilters
+from ...application.query_filters import AnalyticsFilters, DataScope
 from .models import (
     CompressionChunkModel,
     CompressionConfigSnapshotModel,
@@ -31,6 +31,7 @@ def filters_from_selection(selection: dict[str, Any]) -> AnalyticsFilters:
         negative_savings=selection.get("negative_savings")
         if isinstance(selection.get("negative_savings"), bool)
         else None,
+        data_scope=_data_scope(selection.get("data_scope")),
     )
 
 
@@ -133,3 +134,7 @@ def _datetime(value: Any) -> datetime | None:
 
 def _string(value: Any) -> str | None:
     return value if isinstance(value, str) and value else None
+
+
+def _data_scope(value: Any) -> DataScope:
+    return value if value in {"real", "test", "all"} else "real"

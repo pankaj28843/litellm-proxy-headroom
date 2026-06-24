@@ -48,6 +48,14 @@ the Open WebUI-facing path, analytics `/stats` and `/metrics`, backend `/mcp/`,
 PostgreSQL spot checks, logs, and Phoenix/OTel traces. Unit/config tests are
 secondary guards after the real path is known to work.
 
+For Codex compression usefulness specifically, the primary proof is actual
+`codex exec --json` usage through direct Codex and `./bin/codex-litellm`.
+`gpt-5.4-mini` is for smoke validation only; practical proof uses `gpt-5.5`.
+Judge aggregate provider-reported input, cached input, output, reasoning, total
+tokens, and cost when present across the whole Codex turn/provider-call
+sequence. A dashboard row, estimated tokenizer delta, smoke/demo fixture, or
+single provider call is not enough to claim usefulness.
+
 If a future integration issue appears, exhaust documented configuration,
 Compose topology, and environment variables before adding code. Any unavoidable
 shim must be isolated, tested, and documented with the upstream behavior it is
@@ -110,6 +118,10 @@ Keep analytics code modular and adapter-oriented:
   backend HTTP evidence, PostgreSQL spot checks, stats/metrics deltas, and
   OTel/Phoenix evidence when telemetry is touched. Unit tests come after that
   behavior is useful end to end.
+- Analytics value claims must stay provider-reported and proof-scoped:
+  smoke/demo rows require explicit `data_scope=test`, estimated provider deltas
+  are diagnostics, and dashboard value panels must say unproven or not useful
+  when the aggregate Codex A/B proof is absent or failing.
 
 ## Codex Model Refresh
 

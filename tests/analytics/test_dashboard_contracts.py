@@ -29,9 +29,11 @@ from litellm_proxy_headroom.analytics.application.dashboard_schemas import (
     ProviderCacheDashboardStats,
     ProviderEstimateDelta,
     SavingsDistribution,
+    UsefulnessStatus,
 )
 from litellm_proxy_headroom.analytics.application.query_filters import (
     AnalyticsFilters,
+    DataScope,
 )
 from litellm_proxy_headroom.analytics.application.read_models import (
     CompressionRecordPage,
@@ -72,6 +74,7 @@ def test_dashboard_query_custom_range_and_filters_are_preserved() -> None:
             team_id="team-b",
             status="succeeded",
             negative_savings="false",
+            data_scope="test",
             live=False,
             paused=True,
         )
@@ -89,11 +92,13 @@ def test_dashboard_query_custom_range_and_filters_are_preserved() -> None:
     assert query.filters.team_id == "team-b"
     assert query.filters.status == "succeeded"
     assert query.filters.negative_savings is False
+    assert query.filters.data_scope == "test"
     assert query_values["preset"] == ["custom"]
     assert query_values["from"] == ["2026-06-23T10:00:00+00:00"]
     assert query_values["to"] == ["2026-06-23T11:00:00+00:00"]
     assert query_values["model"] == ["gpt-test"]
     assert query_values["negative_savings"] == ["false"]
+    assert query_values["data_scope"] == ["test"]
     assert query_values["live"] == ["false"]
     assert query_values["paused"] == ["true"]
 
@@ -107,6 +112,11 @@ def test_dashboard_context_contains_template_contract() -> None:
     assert context["backend_status"] == "ready"
     assert context["database_ready"] is True
     assert context["compression_ratio"] == 0.5
+    assert context["stats"].usefulness.status == "unproven"
+    assert (
+        context["stats"].usefulness.cache_evidence_scope
+        == "whole Codex turn/provider-call sequence"
+    )
     assert [metric.label for metric in context["summary_metrics"]] == [
         "Combined saving",
         "Provider cache hit",
@@ -117,7 +127,16 @@ def test_dashboard_context_contains_template_contract() -> None:
     ]
     assert context["summary_metrics"][0].value == "62.0%"
     assert context["summary_metrics"][1].value == "30.0%"
+    assert [metric.label for metric in context["activity_metrics"]] == [
+        "Retrievals",
+        "Cache events",
+        "Provider cached",
+    ]
+    assert all(
+        metric.label != "Provider delta" for metric in context["activity_metrics"]
+    )
     assert [(chip.label, chip.value) for chip in context["filter_chips"]] == [
+        ("Data", "Operational"),
         ("Provider", "provider-a"),
         ("Model", "model-a"),
         ("Savings", "Negative only"),
@@ -138,6 +157,7 @@ def test_dashboard_route_preserves_filters_in_template_context(
             "team_id": "team-b",
             "status": "succeeded",
             "negative_savings": "true",
+            "data_scope": "test",
             "paused": "true",
         },
     )
@@ -147,12 +167,19 @@ def test_dashboard_route_preserves_filters_in_template_context(
     assert response.context["query"].preset == "15m"
     assert response.context["query"].filters.provider == "provider-a"
     assert response.context["query"].filters.negative_savings is True
+    assert response.context["query"].filters.data_scope == "test"
+    assert "Data: Test/demo" in response.text
+    assert 'name="data_scope"' in response.text
     assert "Provider: provider-a" in response.text
+    assert "Primary usefulness unproven" in response.text
+    assert "whole Codex turn/provider-call sequence" in response.text
     assert 'name="provider" value="provider-a"' in response.text
     assert "Resume" in response.text
     assert 'hx-trigger="every 15s"' not in response.text
     assert "SENSITIVE_RAW_PROMPT" not in response.text
     assert "SENSITIVE_RAW_RESPONSE" not in response.text
+    assert "Provider delta" not in response.text
+    assert "Estimated before delta" not in response.text
 
 
 @pytest.mark.parametrize(
@@ -319,6 +346,7 @@ def _query(
     team_id: str | None = None,
     status: str | None = None,
     negative_savings: bool | None = None,
+    data_scope: DataScope = "real",
 ) -> DashboardQuery:
     return DashboardQuery(
         filters=AnalyticsFilters(
@@ -331,6 +359,7 @@ def _query(
             team_id=team_id,
             status=status,
             negative_savings=negative_savings,
+            data_scope=data_scope,
         ),
         preset="15m",
         explicit_from=None,
@@ -406,5 +435,15 @@ def _stats() -> DashboardStats:
             cache_hit_events=3,
             cache_tokens_read=200,
             cache_tokens_written=100,
+        ),
+        usefulness=UsefulnessStatus(
+            status="unproven",
+            label="Primary usefulness unproven",
+            detail=(
+                "These are one-sided operational aggregates. Primary usefulness "
+                "requires a passed direct-vs-proxy Codex CLI proof with provider "
+                "usage/cost and cache hit measured across the whole turn sequence."
+            ),
+            cache_evidence_scope="whole Codex turn/provider-call sequence",
         ),
     )

@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Literal
+
+type DataScope = Literal["real", "test", "all"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -15,3 +18,4 @@ class AnalyticsFilters:
     team_id: str | None = None
     status: str | None = None
     negative_savings: bool | None = None
+    data_scope: DataScope = "real"

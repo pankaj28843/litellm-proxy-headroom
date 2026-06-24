@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict
 
 
@@ -72,6 +74,15 @@ class CacheDashboardStats(BaseModel):
     cache_tokens_written: int
 
 
+class UsefulnessStatus(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: Literal["unproven", "not_useful", "useful"]
+    label: str
+    detail: str
+    cache_evidence_scope: str
+
+
 class DashboardStats(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -94,3 +105,4 @@ class DashboardStats(BaseModel):
     provider_cache: ProviderCacheDashboardStats
     cost: CostDashboardStats
     cache: CacheDashboardStats
+    usefulness: UsefulnessStatus

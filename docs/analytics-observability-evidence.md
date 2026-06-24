@@ -112,6 +112,9 @@ uv run python scripts/e2e_analytics_smoke.py
 
 Expected evidence:
 
+- These smoke gates prove analytics plumbing and read-model recomputability;
+  they do not prove compression usefulness. Use the Codex CLI A/B harness for
+  usefulness claims.
 - CCR smoke prints `headroom_ccr_smoke=ok` with a hash, marker, and retrieval
   count. This proves the Headroom library `CompressionStoreBackend`
   compatibility path, not a Headroom container.
@@ -125,7 +128,8 @@ Expected evidence:
 - Dashboard stats smoke prints `dashboard_stats_smoke=ok` with a marker,
   provider, request count, token savings, negative-savings count,
   estimated-vs-provider token delta, cost-savings value, and distribution
-  bounds. It uses direct PostgreSQL spot checks for the same provider.
+  bounds. It uses `data_scope=test` and direct PostgreSQL spot checks for the
+  same provider.
 - Simulation smoke prints `simulation_smoke=ok` with a marker, simulation key,
   simulated tokens saved, production tokens saved, duplicate/idempotency flag,
   and database result count. It proves simulation rows are separate from
@@ -167,9 +171,9 @@ The smoke script verifies `/ready`, `POST /ingest/compression`,
 Endpoint spot checks for the same marker:
 
 ```bash
-curl -fsS 'http://127.0.0.1:8010/dashboard?provider=dashboard-provider-1782222979&model=dashboard-model-1782222979&strategy=dashboard-strategy-1782222979&tenant_id=dashboard-tenant-1782222979&team_id=dashboard-team-1782222979&preset=all&live=true'
+curl -fsS 'http://127.0.0.1:8010/dashboard?data_scope=test&provider=dashboard-provider-1782222979&model=dashboard-model-1782222979&strategy=dashboard-strategy-1782222979&tenant_id=dashboard-tenant-1782222979&team_id=dashboard-team-1782222979&preset=all&live=true'
 
-curl -fsS 'http://127.0.0.1:8010/dashboard/partials/live?provider=dashboard-provider-1782222979&model=dashboard-model-1782222979&strategy=dashboard-strategy-1782222979&tenant_id=dashboard-tenant-1782222979&team_id=dashboard-team-1782222979&preset=all'
+curl -fsS 'http://127.0.0.1:8010/dashboard/partials/live?data_scope=test&provider=dashboard-provider-1782222979&model=dashboard-model-1782222979&strategy=dashboard-strategy-1782222979&tenant_id=dashboard-tenant-1782222979&team_id=dashboard-team-1782222979&preset=all'
 
 curl -fsS 'http://127.0.0.1:8010/dashboard?preset=all&provider=dashboard-provider-1782222979-no-match&live=false'
 ```
@@ -177,8 +181,14 @@ curl -fsS 'http://127.0.0.1:8010/dashboard?preset=all&provider=dashboard-provide
 Expected evidence:
 
 - The dashboard HTML contains the compact filter panel, active filter chips,
-  Current Impact, Tokens saved, Recent Records, Simulation Replay, and a
-  Pause/Resume action.
+  primary usefulness status, Current Impact, Tokens saved, Recent Records,
+  Simulation Replay, and a Pause/Resume action.
+- Seeded dashboard smoke rows appear only when `data_scope=test` or
+  `data_scope=all` is selected. The default `data_scope=real` view must not use
+  smoke/demo rows to inflate value panels.
+- The proof-status banner says primary usefulness is unproven unless a passed
+  direct-vs-proxy Codex CLI proof exists. Cache evidence must be scoped to the
+  whole Codex turn/provider-call sequence, not one selected provider call.
 - Partial responses return `200` and contain only the partial region, not a
   full `<!doctype html>` document.
 - Empty-state filters render "No persisted compression executions match these
@@ -243,27 +253,32 @@ OAuth/auth is available; never print token contents while checking that state.
 Take snapshots after the smoke commands complete:
 
 ```bash
+# Default operational scope; smoke rows should not inflate this view.
 curl -fsS http://127.0.0.1:8010/stats
-curl -fsS 'http://127.0.0.1:8010/stats?provider=openai&model=gpt-smoke'
-curl -fsS 'http://127.0.0.1:8010/stats/breakdown?group_by=provider'
-curl -fsS 'http://127.0.0.1:8010/stats/dashboard?provider=openai'
-curl -fsS 'http://127.0.0.1:8010/records/compression?limit=10'
+
+# Explicit test scope for seeded smoke rows.
+curl -fsS 'http://127.0.0.1:8010/stats?data_scope=test&provider=openai&model=gpt-smoke'
+curl -fsS 'http://127.0.0.1:8010/stats/breakdown?data_scope=test&group_by=provider'
+curl -fsS 'http://127.0.0.1:8010/stats/dashboard?data_scope=test&provider=openai'
+curl -fsS 'http://127.0.0.1:8010/records/compression?data_scope=test&limit=10'
 curl -fsS 'http://127.0.0.1:8010/simulations/runs?limit=10'
 curl -fsS http://127.0.0.1:8010/metrics | sed -n '1,40p'
 ```
 
 Expected evidence:
 
-- `requests`, `executions`, `chunks`, and `tokens_saved` move after ingest.
-- `retrievals` moves after CCR retrieval.
+- In explicit test scope, `requests`, `executions`, `chunks`, and
+  `tokens_saved` move after ingest.
+- The default operational `/stats` view does not count smoke/demo rows.
+- In explicit test scope, `retrievals` moves after CCR retrieval.
 - `/metrics` exposes Prometheus text counters matching `/stats`.
 - `/records/compression` returns paginated execution-level summaries. Detail
   reads expose content presence booleans and raw-metadata presence booleans,
   not raw chunk content or provider raw metadata by default.
 - `/stats/dashboard` returns recomputable dashboard read models: token totals,
-  savings distributions, latency distributions, provider estimate deltas,
-  measured-vs-estimated cost, cache activity, retrieval frequency, and
-  negative-savings/cost-increase signals.
+  savings distributions, latency distributions, provider estimate diagnostics,
+  measured-vs-estimated cost, cache activity, retrieval frequency,
+  negative-savings/cost-increase signals, and primary usefulness status.
 - `/simulations/runs` returns stored simulation records. Simulation results
   link back to source request/execution/chunk IDs and do not mutate production
   source rows.
@@ -272,6 +287,8 @@ Expected evidence:
 
 Interpretation rules:
 
+- Query/read-model endpoints default to `data_scope=real`; smoke/demo rows are
+  test data and need `data_scope=test` or `data_scope=all`.
 - `requests` counts distinct `compression_requests` rows among matching
   executions; `executions` counts matching `compression_executions` rows.
 - `chunks` counts `compression_chunks` rows for those executions.
@@ -292,6 +309,11 @@ Interpretation rules:
   not a failure status.
 - Dashboard cost fields compare measured `provider_calls.cost_total` with
   estimated `cost_calculations.total_cost`. Missing measured cost stays `null`.
+- Estimated-vs-provider token deltas are diagnostics only. They do not prove
+  savings or usefulness.
+- Primary usefulness needs actual direct Codex vs `./bin/codex-litellm`
+  `codex exec --json` evidence. Judge aggregate lane totals and provider cache
+  hit over the whole Codex turn/provider-call sequence, not a single call.
 
 ## Logs
 

@@ -165,20 +165,13 @@ def _activity_metrics(stats: DashboardStats) -> list[DashboardMetric]:
             if stats.provider_cache.provider_reported_cached_input_tokens
             else "warning",
         ),
-        DashboardMetric(
-            "Provider delta",
-            format_signed_int(
-                stats.provider_estimate_delta.estimated_after_provider_input_delta
-            ),
-            "estimated-after input vs provider-reported input",
-            tone="neutral",
-        ),
     ]
 
 
 def _filter_chips(query: DashboardQuery) -> list[DashboardFilterChip]:
     filters = query.filters
     chips = [
+        DashboardFilterChip("Data", _data_scope_label(filters.data_scope)),
         DashboardFilterChip("Provider", filters.provider or ""),
         DashboardFilterChip("Model", filters.model or ""),
         DashboardFilterChip("Strategy", filters.strategy or ""),
@@ -194,6 +187,14 @@ def _filter_chips(query: DashboardQuery) -> list[DashboardFilterChip]:
             )
         )
     return [chip for chip in chips if chip.value]
+
+
+def _data_scope_label(value: str) -> str:
+    return {
+        "real": "Operational",
+        "test": "Test/demo",
+        "all": "All",
+    }.get(value, value)
 
 
 def format_int(value: int | None) -> str:

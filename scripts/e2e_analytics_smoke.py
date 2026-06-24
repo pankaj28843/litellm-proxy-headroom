@@ -24,7 +24,7 @@ def _payload(marker: str) -> dict[str, Any]:
             "incoming_route": "/v1/chat/completions",
             "provider_hint": "openai",
             "model_hint": "gpt-smoke",
-            "metadata": {"smoke": True},
+            "metadata": {"analytics_data_scope": "test", "smoke": True},
         },
         "config": {
             "config_hash": f"{marker}-config",
@@ -116,9 +116,12 @@ def main() -> int:
         ingest = client.post(f"{backend_url}/ingest/compression", json=payload)
         duplicate = client.post(f"{backend_url}/ingest/compression", json=payload)
         chunk = client.get(f"{backend_url}/chunks/{marker}-ccr")
-        stats = client.get(f"{backend_url}/stats")
+        stats = client.get(f"{backend_url}/stats", params={"data_scope": "test"})
         metrics = client.get(f"{backend_url}/metrics")
-        dashboard = client.get(f"{backend_url}/dashboard")
+        dashboard = client.get(
+            f"{backend_url}/dashboard",
+            params={"data_scope": "test"},
+        )
 
     if any(
         response.status_code >= 400

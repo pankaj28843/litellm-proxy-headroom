@@ -1,0 +1,17 @@
+<section class="proof-status proof-status--{{ stats.usefulness.status }}" aria-labelledby="proof-heading">
+  <div class="section-heading">
+    <div>
+      <h2 id="proof-heading">{{ stats.usefulness.label }}</h2>
+      <p>{{ stats.usefulness.detail }}</p>
+    </div>
+    <span class="status-pill status-pill--warning">{{ stats.usefulness.status|replace('_', ' ')|title }}</span>
+  </div>
+  <div class="detail-grid">
+    <dl>
+      <div>
+        <dt>Cache evidence scope</dt>
+        <dd>{{ stats.usefulness.cache_evidence_scope }}</dd>
+      </div>
+    </dl>
+  </div>
+</section>

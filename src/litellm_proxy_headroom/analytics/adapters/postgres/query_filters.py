@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlalchemy import Select, func, or_, select
+from sqlalchemy import Select, func, not_, or_, select
 
 from ...application.query_filters import AnalyticsFilters
 from .models import (
@@ -11,6 +11,8 @@ from .models import (
     CompressionRequestModel,
     ProviderCallModel,
 )
+
+TEST_DATA_SCOPE_VALUES = ("demo", "smoke", "synthetic", "test")
 
 
 def execution_time() -> Any:
@@ -23,6 +25,10 @@ def execution_time() -> Any:
 
 def execution_conditions(filters: AnalyticsFilters) -> list[Any]:
     conditions: list[Any] = [CompressionExecutionModel.is_simulated.is_(False)]
+    if filters.data_scope == "real":
+        conditions.append(not_(test_data_condition()))
+    elif filters.data_scope == "test":
+        conditions.append(test_data_condition())
     if filters.started_from is not None:
         conditions.append(execution_time() >= filters.started_from)
     if filters.started_to is not None:
@@ -74,6 +80,27 @@ def execution_conditions(filters: AnalyticsFilters) -> list[Any]:
             or_(CompressionRequestModel.model_hint == filters.model, model_exists)
         )
     return conditions
+
+
+def test_data_condition() -> Any:
+    return or_(
+        _metadata_flag("smoke"),
+        _metadata_flag("demo"),
+        _metadata_flag("synthetic"),
+        _metadata_flag("test"),
+        _metadata_text("analytics_data_scope").in_(TEST_DATA_SCOPE_VALUES),
+        _metadata_text("data_scope").in_(TEST_DATA_SCOPE_VALUES),
+    )
+
+
+def _metadata_flag(key: str) -> Any:
+    return _metadata_text(key).in_(("1", "on", "true", "yes"))
+
+
+def _metadata_text(key: str) -> Any:
+    return func.lower(
+        func.coalesce(CompressionRequestModel.request_metadata[key].astext, "")
+    )
 
 
 def matching_execution_rows(filters: AnalyticsFilters) -> Select[Any]:

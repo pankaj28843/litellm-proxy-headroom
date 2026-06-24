@@ -276,6 +276,8 @@ Use the repo-owned wrappers when running agent CLIs through this LiteLLM stack:
 
 ./bin/opencode-litellm --help
 ./bin/opencode-litellm run --format json "reply with a short health marker"
+
+./bin/copilot-litellm --version
 ```
 
 These wrappers read `.env`, do not print secret values, and generate non-secret
@@ -286,6 +288,7 @@ global agent config, symlink the wrapper names:
 ln -sf "$PWD/bin/codex-litellm" "$HOME/.local/bin/codex-litellm"
 ln -sf "$PWD/bin/claude-litellm" "$HOME/.local/bin/claude-litellm"
 ln -sf "$PWD/bin/opencode-litellm" "$HOME/.local/bin/opencode-litellm"
+ln -sf "$PWD/bin/copilot-litellm" "$HOME/.local/bin/copilot-litellm"
 ```
 
 Current support levels are maintained in
@@ -350,6 +353,13 @@ smoke run, and a real practical `gpt-5.5` series have reached LiteLLM with
 marker-correlated provider usage. The practical series currently has no
 provider-reported cached input and no observed cost, so OpenCode routing is
 supported but cache usefulness is not proven.
+
+`bin/copilot-litellm` is intentionally isolation-only. It sets `COPILOT_HOME`
+and `--config-dir` to managed `~/.copilot-headroom`, disables Copilot
+auto-update for wrapper sessions, and refuses native `~/.copilot` by default.
+It does not configure a LiteLLM provider route because current Copilot CLI help
+and GitHub docs expose hosted models, `COPILOT_HOME`, and `--config-dir`, but
+not a documented local OpenAI-compatible base-URL/API-key override.
 
 ## Agent-90 Usefulness Harness
 

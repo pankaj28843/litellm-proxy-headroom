@@ -33,6 +33,8 @@ capture = {
     "opencode_config_dir": os.environ.get("OPENCODE_CONFIG_DIR"),
     "opencode_litellm_client": os.environ.get("OPENCODE_LITELLM_CLIENT"),
     "opencode_litellm_project": os.environ.get("OPENCODE_LITELLM_PROJECT"),
+    "copilot_home": os.environ.get("COPILOT_HOME"),
+    "copilot_auto_update": os.environ.get("COPILOT_AUTO_UPDATE"),
     "xdg_config_home": os.environ.get("XDG_CONFIG_HOME"),
     "xdg_data_home": os.environ.get("XDG_DATA_HOME"),
     "xdg_cache_home": os.environ.get("XDG_CACHE_HOME"),
@@ -72,6 +74,11 @@ def test_wrapper_scripts_have_valid_syntax() -> None:
     )
     subprocess.run(
         ["python3", "-m", "py_compile", str(REPO_ROOT / "bin/opencode-litellm")],
+        check=True,
+        cwd=REPO_ROOT,
+    )
+    subprocess.run(
+        ["python3", "-m", "py_compile", str(REPO_ROOT / "bin/copilot-litellm")],
         check=True,
         cwd=REPO_ROOT,
     )
@@ -855,3 +862,88 @@ def test_opencode_wrapper_rejects_litellm_base_url_with_credentials(
     assert "OPENCODE_LITELLM_BASE_URL" in result.stderr
     assert not capture_path.exists()
     assert not (managed_home / "opencode.json").exists()
+
+
+def test_copilot_wrapper_defaults_to_managed_home(tmp_path: Path) -> None:
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    _write_fake_cli(fake_bin / "copilot")
+    capture_path = tmp_path / "capture.json"
+    managed_home = tmp_path / ".copilot-headroom"
+
+    env = _base_env(fake_bin, capture_path)
+    env["HOME"] = str(tmp_path)
+    env.pop("COPILOT_LITELLM_HOME", None)
+
+    subprocess.run(
+        [str(REPO_ROOT / "bin/copilot-litellm"), "--version"],
+        check=True,
+        cwd=REPO_ROOT,
+        env=env,
+    )
+
+    capture = json.loads(capture_path.read_text())
+    assert capture["args"] == ["--config-dir", str(managed_home), "--version"]
+    assert capture["copilot_home"] == str(managed_home)
+    assert capture["copilot_auto_update"] == "false"
+    assert managed_home.is_dir()
+    assert not (tmp_path / ".copilot").exists()
+
+
+def test_copilot_wrapper_respects_explicit_config_dir(tmp_path: Path) -> None:
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    _write_fake_cli(fake_bin / "copilot")
+    capture_path = tmp_path / "capture.json"
+    config_dir = tmp_path / "custom-copilot"
+
+    env = _base_env(fake_bin, capture_path)
+    env["HOME"] = str(tmp_path)
+
+    subprocess.run(
+        [
+            str(REPO_ROOT / "bin/copilot-litellm"),
+            "--config-dir",
+            str(config_dir),
+            "--version",
+        ],
+        check=True,
+        cwd=REPO_ROOT,
+        env=env,
+    )
+
+    capture = json.loads(capture_path.read_text())
+    assert capture["args"] == ["--config-dir", str(config_dir), "--version"]
+    assert capture["copilot_home"] == str(config_dir)
+    assert config_dir.is_dir()
+
+
+def test_copilot_wrapper_rejects_native_config_dir_by_default(
+    tmp_path: Path,
+) -> None:
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    _write_fake_cli(fake_bin / "copilot")
+    capture_path = tmp_path / "capture.json"
+    native_home = tmp_path / ".copilot"
+
+    env = _base_env(fake_bin, capture_path)
+    env["HOME"] = str(tmp_path)
+
+    result = subprocess.run(
+        [
+            str(REPO_ROOT / "bin/copilot-litellm"),
+            "--config-dir",
+            str(native_home),
+            "--version",
+        ],
+        cwd=REPO_ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 1
+    assert "refusing to use native ~/.copilot" in result.stderr
+    assert not capture_path.exists()
+    assert not native_home.exists()

@@ -107,6 +107,7 @@ def main(argv: list[str]) -> int:
 
     if os.environ.get("LITELLM_MASTER_KEY"):
         os.environ["ANTHROPIC_AUTH_TOKEN"] = os.environ["LITELLM_MASTER_KEY"]
+        os.environ["ANTHROPIC_API_KEY"] = os.environ["LITELLM_MASTER_KEY"]
     elif needs_api_key(argv):
         die(
             f"LITELLM_MASTER_KEY is not set; add it to {REPO_ROOT / '.env'} or the environment."

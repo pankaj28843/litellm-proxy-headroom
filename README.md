@@ -319,18 +319,20 @@ base URL used by both `OPENAI_BASE_URL` and the generated Codex provider. Set
 `medium`, or `high` when the isolated profile should pin Codex
 `model_verbosity`.
 
-`bin/claude-litellm` sets Claude Code's LiteLLM gateway environment, limits
-settings to project scope so user `apiKeyHelper` config does not bypass
-LiteLLM, and writes a generated analytics MCP config under
-`~/.claude-headroom` by default. Set `CLAUDE_LITELLM_HOME` to move that managed
-home, or `CLAUDE_LITELLM_STATE_DIR` for compatibility with earlier wrapper
-tests/scripts. Set `CLAUDE_LITELLM_BASE_URL` when LiteLLM is not on
-`http://127.0.0.1:4000`, and `CLAUDE_LITELLM_ANALYTICS_URL` when analytics is
-not on `http://127.0.0.1:8010`. The wrapper validates those URLs before writing
+`bin/claude-litellm` sets Claude Code's LiteLLM gateway environment, maps
+`LITELLM_MASTER_KEY` to both Anthropic API key env names used by Claude Code,
+limits settings to project scope so user `apiKeyHelper` config does not bypass
+LiteLLM, and writes a generated analytics MCP config under `~/.claude-headroom`
+by default. Set `CLAUDE_LITELLM_HOME` to move that managed home, or
+`CLAUDE_LITELLM_STATE_DIR` for compatibility with earlier wrapper tests/scripts.
+Set `CLAUDE_LITELLM_BASE_URL` when LiteLLM is not on `http://127.0.0.1:4000`,
+and `CLAUDE_LITELLM_ANALYTICS_URL` when analytics is not on
+`http://127.0.0.1:8010`. The wrapper validates those URLs before writing
 managed config and never writes `LITELLM_MASTER_KEY` into `mcp.json`. With the
-current ChatGPT-backed model aliases, Claude Code reaches LiteLLM and analytics
-but can receive a 400 from the model group because Claude Code sends system
-messages and the current ChatGPT provider path rejects them.
+current ChatGPT-backed model aliases, real Claude Code smoke reached LiteLLM
+and analytics but failed with a 400 because the model group rejects Claude
+Code's system-message request shape. Claude Code remains route-gated until an
+Anthropic-compatible LiteLLM model route is proven.
 
 ## Agent-90 Usefulness Harness
 

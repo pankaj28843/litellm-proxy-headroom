@@ -28,6 +28,7 @@ capture = {
     "openai_base_url": os.environ.get("OPENAI_BASE_URL"),
     "anthropic_base_url": os.environ.get("ANTHROPIC_BASE_URL"),
     "anthropic_auth_token_present": bool(os.environ.get("ANTHROPIC_AUTH_TOKEN")),
+    "anthropic_api_key_present": bool(os.environ.get("ANTHROPIC_API_KEY")),
     "gateway_model_discovery": os.environ.get("CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY"),
 }
 Path(os.environ["FAKE_CLI_CAPTURE"]).write_text(json.dumps(capture))
@@ -622,6 +623,7 @@ def test_claude_wrapper_generates_mcp_config_and_gateway_env(tmp_path: Path) -> 
     capture = json.loads(capture_path.read_text())
     assert capture["anthropic_base_url"] == "http://127.0.0.1:4000"
     assert capture["anthropic_auth_token_present"] is True
+    assert capture["anthropic_api_key_present"] is True
     assert capture["gateway_model_discovery"] == "1"
     assert capture["args"] == [
         "--setting-sources",

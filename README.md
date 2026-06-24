@@ -292,12 +292,13 @@ ln -sf "$PWD/bin/copilot-litellm" "$HOME/.local/bin/copilot-litellm"
 ```
 
 Current support levels are maintained in
-[docs/agent-cli-support.md](docs/agent-cli-support.md). Short version: Codex is
-the proven path, Claude Code has an isolated wrapper but still needs an
-Anthropic-compatible LiteLLM route proof, OpenCode has managed config
-generation with route proof pending, and GitHub Copilot CLI is isolation-only
-until GitHub exposes a documented local BYOK/base-URL provider surface for the
-target model.
+[docs/agent-cli-support.md](docs/agent-cli-support.md), and the shared
+provider-row proof schema is in
+[docs/multi-cli-proof-contract.md](docs/multi-cli-proof-contract.md). Short
+version: Codex is the proven useful path, Claude Code is route-gated, OpenCode
+routes through LiteLLM but has no cache-usefulness proof yet, and GitHub
+Copilot CLI is isolation-only until GitHub exposes a documented local
+BYOK/base-URL provider surface for the target model.
 
 `bin/codex-litellm` sets `CODEX_HOME` to the managed `~/.codex-headroom`
 directory, writes `config.toml` and `litellm.config.toml`, symlinks native

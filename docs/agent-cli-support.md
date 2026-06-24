@@ -20,7 +20,7 @@ SDK/MCP docs than CLI provider routing.
 |---|---|---:|---|---|
 | Codex CLI | Supported and proven | `~/.codex-headroom` | Generated Codex TOML provider using LiteLLM `/v1` Responses-compatible base URL and `OPENAI_API_KEY` from `LITELLM_MASTER_KEY`. | Actual `codex exec --json` series, smoke model `gpt-5.4-mini`, primary practical model `gpt-5.5`, aggregate provider usage/cache/DB proof, observed cost only when reported. |
 | Claude Code | Isolated wrapper, provider route gated | `~/.claude-headroom` | `ANTHROPIC_BASE_URL` plus both `ANTHROPIC_AUTH_TOKEN` and `ANTHROPIC_API_KEY` from `LITELLM_MASTER_KEY`, `--setting-sources project`, generated MCP config, and strict MCP isolation. Current ChatGPT-backed LiteLLM aliases reject Claude Code system-message shape. | First prove an Anthropic-compatible LiteLLM model route satisfies Claude Code, then run a real Claude Code call series and aggregate provider/cache rows. |
-| OpenCode | Next BYOK target | `~/.opencode-headroom` planned | Official OpenCode docs support custom OpenAI-compatible providers through `@ai-sdk/openai-compatible`, `options.baseURL`, model entries, and `{env:...}` or `{file:...}` secret references. | Add a Python wrapper/setup script that writes JSON/JSONC config under the managed home, then run real `opencode run --format json` series against LiteLLM. |
+| OpenCode | Managed wrapper, route proof pending | `~/.opencode-headroom` | Official OpenCode docs support custom OpenAI-compatible providers through `@ai-sdk/openai-compatible`, `options.baseURL`, model entries, and `{env:...}` or `{file:...}` secret references. | Run real `opencode run --format json` smoke and practical series against LiteLLM, then aggregate provider/cache rows. |
 | GitHub Copilot CLI | Isolation feasible, BYOK route unsupported | `~/.copilot-headroom` planned | Local help and GitHub docs expose `COPILOT_HOME`/`--config-dir`, MCP/custom-agent config, and hosted `--model` choices. They do not expose a local OpenAI-compatible base URL/API-key provider override. | Record unsupported boundary unless GitHub documents a hosted or enterprise BYOK model surface that exposes the target model through Copilot CLI. |
 
 ## Wrapper Contract
@@ -39,7 +39,7 @@ SDK/MCP docs than CLI provider routing.
 ## Implementation Order
 
 1. Keep Codex regression proof green while adding other CLIs.
-2. Implement OpenCode first because the documented custom OpenAI-compatible
+2. Prove OpenCode routing because the documented custom OpenAI-compatible
    provider surface matches LiteLLM directly.
 3. Keep Claude Code gated until LiteLLM has an Anthropic-compatible route that
    accepts the CLI's request shape.

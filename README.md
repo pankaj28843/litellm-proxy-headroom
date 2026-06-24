@@ -273,25 +273,28 @@ Use the repo-owned wrappers when running agent CLIs through this LiteLLM stack:
 ./bin/claude-litellm --help
 ./bin/claude-litellm --print --verbose --output-format stream-json \
   "reply with a short health marker"
+
+./bin/opencode-litellm --help
+./bin/opencode-litellm run --format json "reply with a short health marker"
 ```
 
-Both wrappers read `.env`, do not print secret values, and generate non-secret
-runtime config in managed local state. The Codex wrapper owns
-`~/.codex-headroom` by default. To put them on your PATH without changing
+These wrappers read `.env`, do not print secret values, and generate non-secret
+runtime config in managed local state. To put them on your PATH without changing
 global agent config, symlink the wrapper names:
 
 ```bash
 ln -sf "$PWD/bin/codex-litellm" "$HOME/.local/bin/codex-litellm"
 ln -sf "$PWD/bin/claude-litellm" "$HOME/.local/bin/claude-litellm"
+ln -sf "$PWD/bin/opencode-litellm" "$HOME/.local/bin/opencode-litellm"
 ```
 
 Current support levels are maintained in
 [docs/agent-cli-support.md](docs/agent-cli-support.md). Short version: Codex is
 the proven path, Claude Code has an isolated wrapper but still needs an
-Anthropic-compatible LiteLLM route proof, OpenCode is the next first-class
-BYOK target because it documents custom OpenAI-compatible providers, and
-GitHub Copilot CLI is isolation-only until GitHub exposes a documented local
-BYOK/base-URL provider surface for the target model.
+Anthropic-compatible LiteLLM route proof, OpenCode has managed config
+generation with route proof pending, and GitHub Copilot CLI is isolation-only
+until GitHub exposes a documented local BYOK/base-URL provider surface for the
+target model.
 
 `bin/codex-litellm` sets `CODEX_HOME` to the managed `~/.codex-headroom`
 directory, writes `config.toml` and `litellm.config.toml`, symlinks native
@@ -333,6 +336,16 @@ current ChatGPT-backed model aliases, real Claude Code smoke reached LiteLLM
 and analytics but failed with a 400 because the model group rejects Claude
 Code's system-message request shape. Claude Code remains route-gated until an
 Anthropic-compatible LiteLLM model route is proven.
+
+`bin/opencode-litellm` sets OpenCode's config and XDG state roots under the
+managed `~/.opencode-headroom` home by default, writes a generated
+`opencode.json` custom provider for LiteLLM using `@ai-sdk/openai-compatible`,
+and references `LITELLM_MASTER_KEY` through `{env:LITELLM_MASTER_KEY}` instead
+of copying the key. Set `OPENCODE_LITELLM_HOME` to move the managed home. Set
+`OPENCODE_LITELLM_BASE_URL` and `OPENCODE_LITELLM_ANALYTICS_URL` when services
+are not on `http://127.0.0.1:4000` and `http://127.0.0.1:8010`. The wrapper
+pins `--model litellm/gpt-5.5` unless the command already supplies `--model`.
+Real OpenCode provider proof is tracked separately from config generation.
 
 ## Agent-90 Usefulness Harness
 

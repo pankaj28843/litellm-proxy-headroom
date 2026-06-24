@@ -29,6 +29,13 @@ capture = {
     "anthropic_base_url": os.environ.get("ANTHROPIC_BASE_URL"),
     "anthropic_auth_token_present": bool(os.environ.get("ANTHROPIC_AUTH_TOKEN")),
     "anthropic_api_key_present": bool(os.environ.get("ANTHROPIC_API_KEY")),
+    "opencode_config": os.environ.get("OPENCODE_CONFIG"),
+    "opencode_config_dir": os.environ.get("OPENCODE_CONFIG_DIR"),
+    "opencode_litellm_client": os.environ.get("OPENCODE_LITELLM_CLIENT"),
+    "opencode_litellm_project": os.environ.get("OPENCODE_LITELLM_PROJECT"),
+    "xdg_config_home": os.environ.get("XDG_CONFIG_HOME"),
+    "xdg_data_home": os.environ.get("XDG_DATA_HOME"),
+    "xdg_cache_home": os.environ.get("XDG_CACHE_HOME"),
     "gateway_model_discovery": os.environ.get("CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY"),
 }
 Path(os.environ["FAKE_CLI_CAPTURE"]).write_text(json.dumps(capture))
@@ -60,6 +67,11 @@ def test_wrapper_scripts_have_valid_syntax() -> None:
     )
     subprocess.run(
         ["python3", "-m", "py_compile", str(REPO_ROOT / "bin/claude-litellm")],
+        check=True,
+        cwd=REPO_ROOT,
+    )
+    subprocess.run(
+        ["python3", "-m", "py_compile", str(REPO_ROOT / "bin/opencode-litellm")],
         check=True,
         cwd=REPO_ROOT,
     )
@@ -701,3 +713,122 @@ def test_claude_wrapper_rejects_litellm_base_url_with_credentials(
     assert "CLAUDE_LITELLM_BASE_URL" in result.stderr
     assert not capture_path.exists()
     assert not (managed_home / "mcp.json").exists()
+
+
+def test_opencode_wrapper_generates_managed_config_and_env(tmp_path: Path) -> None:
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    _write_fake_cli(fake_bin / "opencode")
+    capture_path = tmp_path / "capture.json"
+    managed_home = tmp_path / "opencode-home"
+
+    env = _base_env(fake_bin, capture_path)
+    env["HOME"] = str(tmp_path)
+    env["OPENCODE_LITELLM_HOME"] = str(managed_home)
+    env["OPENCODE_LITELLM_MODEL"] = "gpt-5.5"
+    env["OPENCODE_LITELLM_SMALL_MODEL"] = "gpt-5.4-mini"
+
+    subprocess.run(
+        [str(REPO_ROOT / "bin/opencode-litellm"), "run", "health marker"],
+        check=True,
+        cwd=REPO_ROOT,
+        env=env,
+    )
+
+    capture = json.loads(capture_path.read_text())
+    config_path = managed_home / "opencode.json"
+    assert capture["args"] == [
+        "--model",
+        "litellm/gpt-5.5",
+        "run",
+        "health marker",
+    ]
+    assert capture["opencode_config"] == str(config_path)
+    assert capture["opencode_config_dir"] == str(managed_home / "config-dir")
+    assert capture["xdg_config_home"] == str(managed_home / "xdg-config")
+    assert capture["xdg_data_home"] == str(managed_home / "xdg-data")
+    assert capture["xdg_cache_home"] == str(managed_home / "xdg-cache")
+    assert capture["opencode_litellm_client"] == "opencode"
+    assert capture["opencode_litellm_project"] == "litellm-proxy-headroom"
+    assert not (tmp_path / ".config" / "opencode").exists()
+    assert not (tmp_path / ".local" / "share" / "opencode").exists()
+
+    config = json.loads(config_path.read_text())
+    provider = config["provider"]["litellm"]
+    assert config["enabled_providers"] == ["litellm"]
+    assert config["model"] == "litellm/gpt-5.5"
+    assert config["small_model"] == "litellm/gpt-5.4-mini"
+    assert provider["npm"] == "@ai-sdk/openai-compatible"
+    assert provider["options"]["baseURL"] == "http://127.0.0.1:4000/v1"
+    assert provider["options"]["apiKey"] == "{env:LITELLM_MASTER_KEY}"
+    assert provider["options"]["headers"] == {
+        "X-LiteLLM-Proxy-Client": "{env:OPENCODE_LITELLM_CLIENT}",
+        "X-LiteLLM-Proxy-Project": "{env:OPENCODE_LITELLM_PROJECT}",
+        "X-LiteLLM-Proxy-Run": "{env:LITELLM_PROXY_RUN_MARKER}",
+    }
+    assert config["mcp"]["analytics"] == {
+        "type": "remote",
+        "url": "http://127.0.0.1:8010/mcp/",
+        "enabled": True,
+        "oauth": False,
+    }
+    assert "sk-test-wrapper-key" not in config_path.read_text()
+
+
+def test_opencode_wrapper_respects_existing_model_argument(tmp_path: Path) -> None:
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    _write_fake_cli(fake_bin / "opencode")
+    capture_path = tmp_path / "capture.json"
+    managed_home = tmp_path / "opencode-home"
+
+    env = _base_env(fake_bin, capture_path)
+    env["OPENCODE_LITELLM_HOME"] = str(managed_home)
+
+    subprocess.run(
+        [
+            str(REPO_ROOT / "bin/opencode-litellm"),
+            "--model",
+            "litellm/gpt-5.4-mini",
+            "run",
+            "health marker",
+        ],
+        check=True,
+        cwd=REPO_ROOT,
+        env=env,
+    )
+
+    capture = json.loads(capture_path.read_text())
+    assert capture["args"] == [
+        "--model",
+        "litellm/gpt-5.4-mini",
+        "run",
+        "health marker",
+    ]
+
+
+def test_opencode_wrapper_rejects_litellm_base_url_with_credentials(
+    tmp_path: Path,
+) -> None:
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    _write_fake_cli(fake_bin / "opencode")
+    capture_path = tmp_path / "capture.json"
+    managed_home = tmp_path / "opencode-home"
+
+    env = _base_env(fake_bin, capture_path)
+    env["OPENCODE_LITELLM_HOME"] = str(managed_home)
+    env["OPENCODE_LITELLM_BASE_URL"] = "http://user:secret@127.0.0.1:4000"
+
+    result = subprocess.run(
+        [str(REPO_ROOT / "bin/opencode-litellm"), "run", "health marker"],
+        cwd=REPO_ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 1
+    assert "OPENCODE_LITELLM_BASE_URL" in result.stderr
+    assert not capture_path.exists()
+    assert not (managed_home / "opencode.json").exists()

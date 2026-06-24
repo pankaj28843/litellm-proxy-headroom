@@ -58,7 +58,7 @@ def test_wrapper_scripts_have_valid_syntax() -> None:
         cwd=REPO_ROOT,
     )
     subprocess.run(
-        ["bash", "-n", str(REPO_ROOT / "bin/claude-litellm")],
+        ["python3", "-m", "py_compile", str(REPO_ROOT / "bin/claude-litellm")],
         check=True,
         cwd=REPO_ROOT,
     )
@@ -647,3 +647,55 @@ def test_claude_wrapper_generates_mcp_config_and_gateway_env(tmp_path: Path) -> 
         }
     }
     assert "sk-test-wrapper-key" not in (state_dir / "mcp.json").read_text()
+
+
+def test_claude_wrapper_defaults_to_managed_home(tmp_path: Path) -> None:
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    _write_fake_cli(fake_bin / "claude")
+    capture_path = tmp_path / "capture.json"
+    managed_home = tmp_path / ".claude-headroom"
+
+    env = _base_env(fake_bin, capture_path)
+    env["HOME"] = str(tmp_path)
+    env.pop("CLAUDE_LITELLM_HOME", None)
+    env.pop("CLAUDE_LITELLM_STATE_DIR", None)
+
+    subprocess.run(
+        [str(REPO_ROOT / "bin/claude-litellm"), "--print", "health marker"],
+        check=True,
+        cwd=REPO_ROOT,
+        env=env,
+    )
+
+    capture = json.loads(capture_path.read_text())
+    assert capture["args"][2:4] == ["--mcp-config", str(managed_home / "mcp.json")]
+    assert (managed_home / "mcp.json").is_file()
+    assert not (tmp_path / ".claude").exists()
+
+
+def test_claude_wrapper_rejects_litellm_base_url_with_credentials(
+    tmp_path: Path,
+) -> None:
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    _write_fake_cli(fake_bin / "claude")
+    capture_path = tmp_path / "capture.json"
+    managed_home = tmp_path / ".claude-headroom"
+
+    env = _base_env(fake_bin, capture_path)
+    env["HOME"] = str(tmp_path)
+    env["CLAUDE_LITELLM_BASE_URL"] = "http://user:secret@127.0.0.1:4000"
+
+    result = subprocess.run(
+        [str(REPO_ROOT / "bin/claude-litellm"), "--print", "health marker"],
+        cwd=REPO_ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 1
+    assert "CLAUDE_LITELLM_BASE_URL" in result.stderr
+    assert not capture_path.exists()
+    assert not (managed_home / "mcp.json").exists()

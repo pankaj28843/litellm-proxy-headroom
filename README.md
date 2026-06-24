@@ -285,6 +285,14 @@ ln -sf "$PWD/bin/codex-litellm" "$HOME/.local/bin/codex-litellm"
 ln -sf "$PWD/bin/claude-litellm" "$HOME/.local/bin/claude-litellm"
 ```
 
+Current support levels are maintained in
+[docs/agent-cli-support.md](docs/agent-cli-support.md). Short version: Codex is
+the proven path, Claude Code has an isolated wrapper but still needs an
+Anthropic-compatible LiteLLM route proof, OpenCode is the next first-class
+BYOK target because it documents custom OpenAI-compatible providers, and
+GitHub Copilot CLI is isolation-only until GitHub exposes a documented local
+BYOK/base-URL provider surface for the target model.
+
 `bin/codex-litellm` sets `CODEX_HOME` to the managed `~/.codex-headroom`
 directory, writes `config.toml` and `litellm.config.toml`, symlinks native
 Codex state such as `sessions` and `auth.json` from `~/.codex`, configures the

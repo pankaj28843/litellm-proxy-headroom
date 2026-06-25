@@ -13,6 +13,7 @@ if SRC_ROOT.exists():
     sys.path.insert(0, str(SRC_ROOT))
 
 from litellm_proxy_headroom.agent_cli.managed_home import (  # noqa: E402
+    compression_mode_header_value,
     default_home_path,
     find_real_executable,
     load_dotenv,
@@ -93,6 +94,7 @@ def litellm_provider(base_url: str) -> dict[str, object]:
             "X-LiteLLM-Proxy-Client": "CODEX_LITELLM_CLIENT",
             "X-LiteLLM-Proxy-Project": "CODEX_LITELLM_PROJECT",
             "X-LiteLLM-Proxy-Run": "LITELLM_PROXY_RUN_MARKER",
+            "X-LiteLLM-Proxy-Compression": "CODEX_LITELLM_COMPRESSION_MODE",
         },
     }
 
@@ -232,6 +234,17 @@ def main(argv: list[str]) -> int:
     except ValueError as exc:
         die(str(exc))
     os.environ["OPENAI_BASE_URL"] = litellm_base_url
+    try:
+        compression_mode = compression_mode_header_value(
+            os.environ.get("CODEX_LITELLM_COMPRESSION_MODE"),
+            env_name="CODEX_LITELLM_COMPRESSION_MODE",
+        )
+    except ValueError as exc:
+        die(str(exc))
+    if compression_mode is None:
+        os.environ.pop("CODEX_LITELLM_COMPRESSION_MODE", None)
+    else:
+        os.environ["CODEX_LITELLM_COMPRESSION_MODE"] = compression_mode
 
     os.environ.setdefault("CODEX_LITELLM_CLIENT", "codex")
     if "CODEX_LITELLM_PROJECT" not in os.environ:

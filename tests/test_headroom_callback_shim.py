@@ -465,6 +465,93 @@ def test_responses_cache_guard_preserves_tools_by_default_while_compressing_outp
     assert capture.tokens_saved == 900
 
 
+def test_responses_compression_can_be_disabled_by_local_proxy_header(
+    monkeypatch,
+) -> None:
+    module = load_shim_module()
+    from litellm_proxy_headroom.analytics.adapters.litellm import callback
+
+    long_output = "verbose tool output " * 80
+    data = {
+        "model": "gpt-5.5",
+        "prompt_cache_key": "codex-generated-key",
+        "input": [
+            {
+                "type": "function_call_output",
+                "call_id": "call_1",
+                "output": long_output,
+            },
+        ],
+        "metadata": {"request_id": "responses-compression-disabled"},
+        "proxy_server_request": {
+            "headers": {
+                "X-LiteLLM-Proxy-Client": "codex",
+                "X-LiteLLM-Proxy-Compression": "OFF",
+            }
+        },
+    }
+
+    def fail_compress(**_: object) -> None:
+        raise AssertionError("compression should not run")
+
+    monkeypatch.setattr(callback, "compress", fail_compress)
+
+    shim = module.HeadroomCallback()
+    result = asyncio.run(shim.async_pre_call_hook(data=data, call_type="aresponses"))
+
+    assert result is data
+    assert data["input"][0]["output"] == long_output
+    assert data["litellm_session_id"].startswith("codex-cache-")
+
+    capture = shim._pending["responses-compression-disabled"]
+    assert capture.skip_reason == "compression_disabled_by_proxy_header"
+    assert capture.compression_status == "skipped"
+    assert capture.tokens_before is None
+    assert capture.tokens_saved is None
+    assert capture.request_metadata["litellm_proxy_compression_mode"] == "off"
+    assert "openai:responses:chatgpt_session_affinity" in capture.transforms_applied
+    assert "openai:responses:tool_output_units" not in capture.transforms_applied
+
+
+def test_message_compression_can_be_disabled_by_local_proxy_header(
+    monkeypatch,
+) -> None:
+    module = load_shim_module()
+    from litellm_proxy_headroom.analytics.adapters.litellm import callback
+
+    messages = [{"role": "user", "content": "large prompt " * 100}]
+    data = {
+        "model": "gpt-5.5",
+        "messages": copy.deepcopy(messages),
+        "metadata": {"request_id": "messages-compression-disabled"},
+        "proxy_server_request": {
+            "headers": {
+                "X-LiteLLM-Proxy-Client": "claude",
+                "X-LiteLLM-Proxy-Compression": "off",
+            }
+        },
+    }
+
+    def fail_compress(**_: object) -> None:
+        raise AssertionError("compression should not run")
+
+    monkeypatch.setattr(callback, "compress", fail_compress)
+
+    shim = module.HeadroomCallback()
+    result = asyncio.run(shim.async_pre_call_hook(data=data, call_type="acompletion"))
+
+    assert result is data
+    assert data["messages"] == messages
+
+    capture = shim._pending["messages-compression-disabled"]
+    assert capture.skip_reason == "compression_disabled_by_proxy_header"
+    assert capture.compression_status == "skipped"
+    assert capture.request_metadata["litellm_proxy_client"] == "claude"
+    assert capture.request_metadata["litellm_proxy_compression_mode"] == "off"
+    assert capture.tokens_before is None
+    assert capture.tokens_saved is None
+
+
 def test_responses_deployment_payload_diagnostic_is_content_free(
     monkeypatch,
 ) -> None:

@@ -97,6 +97,7 @@ def test_build_proof_record_rejects_unknown_status() -> None:
             managed_home="~/.example-headroom",
             support_status="maybe",
             marker="marker",
+            compression_mode="on",
             model_scope=[],
             artifact_dir="tmp/example",
             db_correlation="marker",
@@ -116,6 +117,7 @@ def test_build_proof_record_can_override_cost_status() -> None:
         managed_home="~/.copilot-headroom",
         support_status="route_supported_cache_unproven",
         marker="copilot-practical",
+        compression_mode="on",
         model_scope=[],
         artifact_dir="tmp/copilot",
         db_correlation="time_window",
@@ -171,6 +173,8 @@ def test_collector_cli_writes_normalized_proof_json(tmp_path: Path) -> None:
             "route_supported_cache_unproven",
             "--marker",
             "opencode-practical",
+            "--compression-mode",
+            "off",
             "--model-scope",
             "practical:gpt-5.5",
             "--artifact-dir",
@@ -191,6 +195,7 @@ def test_collector_cli_writes_normalized_proof_json(tmp_path: Path) -> None:
     proof = json.loads(out_path.read_text())
     assert proof["cli"] == "opencode"
     assert proof["support_status"] == "route_supported_cache_unproven"
+    assert proof["compression_mode"] == "off"
     assert proof["client_attribution"] == ["opencode"]
     assert proof["aggregate"]["input_tokens"] == 16000
     assert proof["aggregate"]["cached_input_tokens"] == "absent"

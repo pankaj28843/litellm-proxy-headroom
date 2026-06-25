@@ -22,6 +22,7 @@ SUPPORT_STATUSES = {
 }
 DB_CORRELATION_VALUES = {"marker", "time_window", "not_applicable"}
 COST_STATUS_VALUES = {"observed", "unavailable", "not_applicable"}
+COMPRESSION_MODE_VALUES = {"on", "off", "mixed", "unknown", "not_applicable"}
 
 
 def _optional_int(value: Any) -> int | None:
@@ -133,6 +134,7 @@ def build_proof_record(
     managed_home: str,
     support_status: str,
     marker: str,
+    compression_mode: str,
     model_scope: list[str],
     artifact_dir: str,
     db_correlation: str,
@@ -144,6 +146,8 @@ def build_proof_record(
         raise ValueError(f"unsupported support_status: {support_status}")
     if db_correlation not in DB_CORRELATION_VALUES:
         raise ValueError(f"unsupported db_correlation: {db_correlation}")
+    if compression_mode not in COMPRESSION_MODE_VALUES:
+        raise ValueError(f"unsupported compression_mode: {compression_mode}")
     if (
         cost_status_override is not None
         and cost_status_override not in COST_STATUS_VALUES
@@ -161,6 +165,7 @@ def build_proof_record(
         "managed_home": managed_home,
         "support_status": support_status,
         "marker": marker,
+        "compression_mode": compression_mode,
         "model_scope": model_scope,
         "artifact_dir": artifact_dir,
         "db_correlation": db_correlation,
@@ -194,6 +199,15 @@ def parse_args() -> argparse.Namespace:
         "--support-status", required=True, choices=sorted(SUPPORT_STATUSES)
     )
     parser.add_argument("--marker", required=True)
+    parser.add_argument(
+        "--compression-mode",
+        default="on",
+        choices=sorted(COMPRESSION_MODE_VALUES),
+        help=(
+            "Local proof mode for this real CLI series. Use off for explicit "
+            "compression-disabled baselines."
+        ),
+    )
     parser.add_argument("--model-scope", action="append", default=[])
     parser.add_argument("--artifact-dir", required=True)
     parser.add_argument(
@@ -215,6 +229,7 @@ def main() -> int:
         managed_home=args.managed_home,
         support_status=args.support_status,
         marker=args.marker,
+        compression_mode=args.compression_mode,
         model_scope=args.model_scope,
         artifact_dir=args.artifact_dir,
         db_correlation=args.db_correlation,

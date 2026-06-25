@@ -8,6 +8,8 @@ from pathlib import Path
 from urllib.parse import quote, urlsplit, urlunsplit
 
 BARE_KEY_RE = re.compile(r"^[A-Za-z0-9_-]+$")
+COMPRESSION_MODE_OFF_VALUES = {"0", "false", "no", "off", "disabled"}
+COMPRESSION_MODE_ON_VALUES = {"1", "true", "yes", "on", "enabled"}
 
 
 def default_home_path(name: str, *, fallback: Path) -> Path:
@@ -43,6 +45,17 @@ def truthy_env(name: str, default: bool) -> bool:
     if raw is None:
         return default
     return raw in {"1", "true", "TRUE", "yes", "YES", "on", "ON"}
+
+
+def compression_mode_header_value(raw: str | None, *, env_name: str) -> str | None:
+    if raw is None or not raw.strip():
+        return None
+    normalized = raw.strip().lower()
+    if normalized in COMPRESSION_MODE_OFF_VALUES:
+        return "off"
+    if normalized in COMPRESSION_MODE_ON_VALUES:
+        return "on"
+    raise ValueError(f"{env_name} must be on or off.")
 
 
 def normalize_base_url(raw: str, *, env_name: str, suffix: str) -> str:

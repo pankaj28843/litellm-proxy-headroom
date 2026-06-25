@@ -49,6 +49,7 @@ DEFAULT_MODEL = "claude-sonnet-4-5-20250929"
 PROXY_RUN_MARKER_HEADER = "x-litellm-proxy-run"
 PROXY_PROJECT_HEADER = "x-litellm-proxy-project"
 PROXY_CLIENT_HEADER = "x-litellm-proxy-client"
+PROXY_COMPRESSION_HEADER = "x-litellm-proxy-compression"
 ANALYTICS_RETRIEVAL_TOOL_NAME = "litellm_proxy_analytics_retrieve_chunk"
 RESPONSES_MIN_MUTABLE_BYTES = 512
 RESPONSES_OUTPUT_ITEM_TYPES = frozenset(
@@ -136,6 +137,7 @@ RESPONSES_CACHE_DIAGNOSTIC_VOLATILE_TOP_LEVEL_KEYS = frozenset(
         "prompt_cache_key",
     }
 )
+COMPRESSION_HEADER_DISABLED_VALUES = frozenset({"0", "false", "no", "off", "disabled"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -304,6 +306,9 @@ def _request_metadata_from_data(
     )
     if client:
         metadata["litellm_proxy_client"] = client
+    compression_mode = _compression_mode_from_data(data)
+    if compression_mode:
+        metadata["litellm_proxy_compression_mode"] = compression_mode
     affinity_hash = _provider_session_affinity_hash(data)
     if affinity_hash:
         metadata["provider_session_affinity_source"] = "prompt_cache_key"
@@ -316,6 +321,37 @@ def _proxy_client_from_data(data: dict[str, Any]) -> str | None:
         _header_value(_proxy_request_headers(data), PROXY_CLIENT_HEADER),
         max_length=64,
     )
+
+
+def _compression_mode_from_data(data: dict[str, Any]) -> str | None:
+    value = _sanitized_metadata_text(
+        _header_value(_proxy_request_headers(data), PROXY_COMPRESSION_HEADER),
+        max_length=32,
+    )
+    return value.lower() if value else None
+
+
+def _compression_disabled_by_proxy_header(data: dict[str, Any]) -> bool:
+    value = _compression_mode_from_data(data)
+    return value in COMPRESSION_HEADER_DISABLED_VALUES
+
+
+def _compression_disabled_result(
+    transforms_applied: list[Any], *, savings_profile: str
+) -> dict[str, Any]:
+    return {
+        "messages": None,
+        "tokens_before": None,
+        "tokens_after": None,
+        "tokens_saved": None,
+        "compression_ratio": None,
+        "transforms_applied": list(dict.fromkeys(transforms_applied)),
+        "savings_profile": savings_profile,
+        "skip_reason": "compression_disabled_by_proxy_header",
+        "attempted_input_tokens": 0,
+        "responses_units_attempted": 0,
+        "responses_units_modified": 0,
+    }
 
 
 def _existing_chatgpt_session_id(data: dict[str, Any]) -> str | None:
@@ -1056,6 +1092,10 @@ class HeadroomAnalyticsCallback(_HeadroomLiteLLMCallback, CustomLogger):
             transforms_applied.append("openai:responses:chatgpt_provider_passthrough")
         if "prompt_cache_key" in preserved_passthrough:
             transforms_applied.append("openai:responses:prompt_cache_key_passthrough")
+        if _compression_disabled_by_proxy_header(data):
+            return _compression_disabled_result(
+                transforms_applied, savings_profile=self._savings_profile
+            )
         tool_compaction = (
             _compact_responses_tools(data, model)
             if _env_flag_enabled(RESPONSES_TOOL_SCHEMA_COMPACTION_ENV)
@@ -1237,6 +1277,17 @@ class HeadroomAnalyticsCallback(_HeadroomLiteLLMCallback, CustomLogger):
                 )
                 if compression is not None:
                     self._remember(compression)
+            return data
+
+        if _compression_disabled_by_proxy_header(data):
+            compression = self._compression_capture(
+                request_key,
+                model,
+                data,
+                _compression_disabled_result([], savings_profile=self._savings_profile),
+            )
+            if compression is not None:
+                self._remember(compression)
             return data
 
         self._last_compress_result = None

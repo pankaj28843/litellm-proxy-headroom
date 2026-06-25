@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from litellm_proxy_headroom.agent_cli.managed_home import (
+    compression_mode_header_value,
     find_real_executable,
     normalize_base_url,
     render_toml,
@@ -42,6 +43,18 @@ def test_normalize_base_url_adds_suffix_and_rejects_secret_url_parts() -> None:
             env_name="TEST_BASE_URL",
             suffix="/v1",
         )
+
+
+def test_compression_mode_header_value_normalizes_baseline_modes() -> None:
+    assert compression_mode_header_value(None, env_name="TEST_MODE") is None
+    assert compression_mode_header_value("", env_name="TEST_MODE") is None
+    assert compression_mode_header_value("disabled", env_name="TEST_MODE") == "off"
+    assert compression_mode_header_value("FALSE", env_name="TEST_MODE") == "off"
+    assert compression_mode_header_value("enabled", env_name="TEST_MODE") == "on"
+    assert compression_mode_header_value("1", env_name="TEST_MODE") == "on"
+
+    with pytest.raises(ValueError, match="TEST_MODE"):
+        compression_mode_header_value("maybe", env_name="TEST_MODE")
 
 
 def test_render_toml_writes_parseable_config_without_secret_magic() -> None:

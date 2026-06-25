@@ -56,6 +56,14 @@ tokens, and cost when present across the whole Codex turn/provider-call
 sequence. A dashboard row, estimated tokenizer delta, smoke/demo fixture, or
 single provider call is not enough to claim usefulness.
 
+For non-Codex CLIs whose documented surfaces do not expose a comparable direct
+provider lane, use real CLI series with marker-correlated LiteLLM rows and, when
+supported, a per-request compression-off baseline via local
+`X-LiteLLM-Proxy-Compression: off`. That baseline must keep the same LiteLLM
+provider route and only disable Headroom compression transforms; it is a proof
+mode, not an operator-facing service or replacement for direct provider proof
+where direct proof exists.
+
 If a future integration issue appears, exhaust documented configuration,
 Compose topology, and environment variables before adding code. Any unavoidable
 shim must be isolated, tested, and documented with the upstream behavior it is

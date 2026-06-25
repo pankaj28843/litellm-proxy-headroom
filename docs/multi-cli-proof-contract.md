@@ -14,6 +14,7 @@ Every supported or route-tested CLI proof must record:
 | `wrapper` | Repo wrapper path and managed home, such as `bin/opencode-litellm` and `~/.opencode-headroom`. |
 | `support_status` | `supported_useful`, `route_supported_cache_unproven`, `route_gated`, `isolation_only`, or `unsupported`. |
 | `marker` | `LITELLM_PROXY_RUN_MARKER` or an explicit time-window fallback when the CLI cannot carry a marker. |
+| `compression_mode` | `on`, `off`, `mixed`, `unknown`, or `not_applicable`. Use `off` only for explicit compression-disabled baselines that still route through LiteLLM and record provider rows. |
 | `model_scope` | Smoke model, practical model, and any helper/small-model calls observed. |
 | `artifact_dir` | Path under `tmp/` or other run artifact root containing command output and stderr. |
 | `db_correlation` | `marker`, or `time_window` if marker headers cannot be sent. |
@@ -38,6 +39,29 @@ Every supported or route-tested CLI proof must record:
 | OpenCode | `route_supported_cache_unproven` | Real `opencode run --format json` smoke and practical `gpt-5.5` series routed through LiteLLM with marker-correlated provider rows. Practical aggregate had input `51648`, cached input absent, output `674`, reasoning `314`, total `52322`, cost unavailable. |
 | GitHub Copilot CLI | `route_supported_cache_unproven` | After upgrading Copilot CLI from `1.0.7` to `1.0.64`, `bin/copilot-litellm` uses the documented local BYOK provider env vars to route through LiteLLM. Real smoke and practical series reached `/v1/responses`, but cached input is absent and cost is unavailable. |
 | Pi coding agent | `route_supported_cache_unproven` | After upgrading Pi from `0.75.0` to `0.80.2`, `bin/pi-litellm` uses managed `~/.pi-headroom` plus custom `models.json` provider routing to LiteLLM. Real smoke and practical series reached `/v1/responses`; provider cache was observed, but usefulness remains unproven without direct-vs-proxy comparison and cost is unavailable. |
+
+## Compression-Off Baselines
+
+For CLIs that cannot expose a direct provider baseline comparable to Codex,
+marker-capable wrappers can run a proof-only LiteLLM baseline with compression
+disabled per request:
+
+- Codex: `CODEX_LITELLM_COMPRESSION_MODE=off`
+- Claude Code: `CLAUDE_LITELLM_COMPRESSION_MODE=off` once its route is no
+  longer gated
+- OpenCode: `OPENCODE_LITELLM_COMPRESSION_MODE=off`
+- Pi: `PI_LITELLM_COMPRESSION_MODE=off`
+
+The wrappers normalize common disabled values to `off` and send
+`X-LiteLLM-Proxy-Compression: off`. The callback records
+`litellm_proxy_compression_mode=off` and a skipped compression execution with
+reason `compression_disabled_by_proxy_header`, while still preserving route
+compatibility behavior and provider usage rows. This is a measurement baseline,
+not a default operating mode.
+
+GitHub Copilot CLI does not currently document a local custom-header surface
+for BYOK provider requests. Copilot route proof therefore remains time-window
+correlated unless a later CLI/source version exposes headers.
 
 ## Latest Evidence Pointers
 
@@ -68,6 +92,7 @@ select
   cr.request_metadata->>'litellm_proxy_run_marker' as marker,
   cr.request_metadata->>'litellm_proxy_client' as client,
   cr.request_metadata->>'litellm_proxy_project' as project,
+  cr.request_metadata->>'litellm_proxy_compression_mode' as compression_mode,
   cr.incoming_route,
   pc.model,
   pc.status as provider_status,
@@ -104,6 +129,7 @@ python3 scripts/collect_multi_cli_proof.py \
   --managed-home '~/.opencode-headroom' \
   --support-status route_supported_cache_unproven \
   --marker opencode-practical-20260624T1950 \
+  --compression-mode on \
   --model-scope practical:gpt-5.5 \
   --model-scope helper:gpt-5.4-mini \
   --artifact-dir tmp/opencode-route-proof/opencode-practical-20260624T1950 \

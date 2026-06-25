@@ -24,16 +24,19 @@ capture = {
     "codex_litellm_project": os.environ.get("CODEX_LITELLM_PROJECT"),
     "codex_litellm_reasoning_effort": os.environ.get("CODEX_LITELLM_REASONING_EFFORT"),
     "codex_litellm_model_verbosity": os.environ.get("CODEX_LITELLM_MODEL_VERBOSITY"),
+    "codex_litellm_compression_mode": os.environ.get("CODEX_LITELLM_COMPRESSION_MODE"),
     "openai_api_key_present": bool(os.environ.get("OPENAI_API_KEY")),
     "openai_base_url": os.environ.get("OPENAI_BASE_URL"),
     "anthropic_base_url": os.environ.get("ANTHROPIC_BASE_URL"),
     "anthropic_custom_headers": os.environ.get("ANTHROPIC_CUSTOM_HEADERS"),
+    "claude_litellm_compression_mode": os.environ.get("CLAUDE_LITELLM_COMPRESSION_MODE"),
     "anthropic_auth_token_present": bool(os.environ.get("ANTHROPIC_AUTH_TOKEN")),
     "anthropic_api_key_present": bool(os.environ.get("ANTHROPIC_API_KEY")),
     "opencode_config": os.environ.get("OPENCODE_CONFIG"),
     "opencode_config_dir": os.environ.get("OPENCODE_CONFIG_DIR"),
     "opencode_litellm_client": os.environ.get("OPENCODE_LITELLM_CLIENT"),
     "opencode_litellm_project": os.environ.get("OPENCODE_LITELLM_PROJECT"),
+    "opencode_litellm_compression_mode": os.environ.get("OPENCODE_LITELLM_COMPRESSION_MODE"),
     "copilot_home": os.environ.get("COPILOT_HOME"),
     "copilot_auto_update": os.environ.get("COPILOT_AUTO_UPDATE"),
     "copilot_model": os.environ.get("COPILOT_MODEL"),
@@ -48,6 +51,7 @@ capture = {
     "pi_coding_agent_dir": os.environ.get("PI_CODING_AGENT_DIR"),
     "pi_litellm_client": os.environ.get("PI_LITELLM_CLIENT"),
     "pi_litellm_project": os.environ.get("PI_LITELLM_PROJECT"),
+    "pi_litellm_compression_mode": os.environ.get("PI_LITELLM_COMPRESSION_MODE"),
     "xdg_config_home": os.environ.get("XDG_CONFIG_HOME"),
     "xdg_data_home": os.environ.get("XDG_DATA_HOME"),
     "xdg_cache_home": os.environ.get("XDG_CACHE_HOME"),
@@ -115,6 +119,7 @@ def test_codex_wrapper_generates_responses_provider_config(tmp_path: Path) -> No
     env["CODEX_LITELLM_PROJECT"] = "custom-project"
     env["CODEX_LITELLM_REASONING_EFFORT"] = "high"
     env["CODEX_LITELLM_MODEL_VERBOSITY"] = "low"
+    env["CODEX_LITELLM_COMPRESSION_MODE"] = "disabled"
 
     subprocess.run(
         [str(REPO_ROOT / "bin/codex-litellm"), "exec", "health marker"],
@@ -130,6 +135,7 @@ def test_codex_wrapper_generates_responses_provider_config(tmp_path: Path) -> No
     assert capture["codex_litellm_project"] == "custom-project"
     assert capture["codex_litellm_reasoning_effort"] == "high"
     assert capture["codex_litellm_model_verbosity"] == "low"
+    assert capture["codex_litellm_compression_mode"] == "off"
     assert capture["openai_api_key_present"] is True
     assert capture["openai_base_url"] == "http://127.0.0.1:4000/v1"
 
@@ -156,6 +162,7 @@ def test_codex_wrapper_generates_responses_provider_config(tmp_path: Path) -> No
             "X-LiteLLM-Proxy-Client": "CODEX_LITELLM_CLIENT",
             "X-LiteLLM-Proxy-Project": "CODEX_LITELLM_PROJECT",
             "X-LiteLLM-Proxy-Run": "LITELLM_PROXY_RUN_MARKER",
+            "X-LiteLLM-Proxy-Compression": "CODEX_LITELLM_COMPRESSION_MODE",
         },
     }
     assert "supports_websockets" not in provider
@@ -709,6 +716,7 @@ def test_claude_wrapper_preserves_existing_custom_headers_and_adds_run_marker(
     env["LITELLM_PROXY_RUN_MARKER"] = "CLAUDE-RUN-1"
     env["CLAUDE_LITELLM_CLIENT"] = "claude-smoke"
     env["CLAUDE_LITELLM_PROJECT"] = "project\none"
+    env["CLAUDE_LITELLM_COMPRESSION_MODE"] = "FALSE"
 
     subprocess.run(
         [str(REPO_ROOT / "bin/claude-litellm"), "--print", "health marker"],
@@ -724,8 +732,10 @@ def test_claude_wrapper_preserves_existing_custom_headers_and_adds_run_marker(
             "X-LiteLLM-Proxy-Client: claude-smoke",
             "X-LiteLLM-Proxy-Project: project one",
             "X-LiteLLM-Proxy-Run: CLAUDE-RUN-1",
+            "X-LiteLLM-Proxy-Compression: off",
         ]
     )
+    assert capture["claude_litellm_compression_mode"] == "off"
 
 
 def test_claude_wrapper_defaults_to_managed_home(tmp_path: Path) -> None:
@@ -792,6 +802,7 @@ def test_opencode_wrapper_generates_managed_config_and_env(tmp_path: Path) -> No
     env["OPENCODE_LITELLM_HOME"] = str(managed_home)
     env["OPENCODE_LITELLM_MODEL"] = "gpt-5.5"
     env["OPENCODE_LITELLM_SMALL_MODEL"] = "gpt-5.4-mini"
+    env["OPENCODE_LITELLM_COMPRESSION_MODE"] = "0"
 
     subprocess.run(
         [str(REPO_ROOT / "bin/opencode-litellm"), "run", "health marker"],
@@ -815,6 +826,7 @@ def test_opencode_wrapper_generates_managed_config_and_env(tmp_path: Path) -> No
     assert capture["xdg_cache_home"] == str(managed_home / "xdg-cache")
     assert capture["opencode_litellm_client"] == "opencode"
     assert capture["opencode_litellm_project"] == "litellm-proxy-headroom"
+    assert capture["opencode_litellm_compression_mode"] == "off"
     assert not (tmp_path / ".config" / "opencode").exists()
     assert not (tmp_path / ".local" / "share" / "opencode").exists()
 
@@ -830,6 +842,7 @@ def test_opencode_wrapper_generates_managed_config_and_env(tmp_path: Path) -> No
         "X-LiteLLM-Proxy-Client": "{env:OPENCODE_LITELLM_CLIENT}",
         "X-LiteLLM-Proxy-Project": "{env:OPENCODE_LITELLM_PROJECT}",
         "X-LiteLLM-Proxy-Run": "{env:LITELLM_PROXY_RUN_MARKER}",
+        "X-LiteLLM-Proxy-Compression": "{env:OPENCODE_LITELLM_COMPRESSION_MODE}",
     }
     assert config["mcp"]["analytics"] == {
         "type": "remote",
@@ -934,6 +947,7 @@ def test_pi_wrapper_generates_managed_models_config_and_env(tmp_path: Path) -> N
     env["PI_LITELLM_HOME"] = str(managed_home)
     env["PI_LITELLM_MODEL"] = "gpt-5.5"
     env["PI_LITELLM_SMALL_MODEL"] = "gpt-5.4-mini"
+    env["PI_LITELLM_COMPRESSION_MODE"] = "no"
 
     subprocess.run(
         [str(REPO_ROOT / "bin/pi-litellm"), "-p", "health marker"],
@@ -955,6 +969,7 @@ def test_pi_wrapper_generates_managed_models_config_and_env(tmp_path: Path) -> N
     assert capture["pi_coding_agent_dir"] == str(managed_home)
     assert capture["pi_litellm_client"] == "pi"
     assert capture["pi_litellm_project"] == "litellm-proxy-headroom"
+    assert capture["pi_litellm_compression_mode"] == "off"
     assert not (tmp_path / ".pi" / "agent").exists()
 
     config = json.loads(models_path.read_text())
@@ -986,6 +1001,7 @@ def test_pi_wrapper_generates_managed_models_config_and_env(tmp_path: Path) -> N
         "X-LiteLLM-Proxy-Client": "$PI_LITELLM_CLIENT",
         "X-LiteLLM-Proxy-Project": "$PI_LITELLM_PROJECT",
         "X-LiteLLM-Proxy-Run": "$LITELLM_PROXY_RUN_MARKER",
+        "X-LiteLLM-Proxy-Compression": "$PI_LITELLM_COMPRESSION_MODE",
     }
     assert "sk-test-wrapper-key" not in models_path.read_text()
 

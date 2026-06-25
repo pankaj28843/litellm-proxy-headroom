@@ -45,6 +45,12 @@ For the latest local runtime artifact pointers behind these labels, see
   required, no credentials, query strings, or fragments.
 - Wrapper scripts should be Python and use structured serializers/parsers for
   TOML/JSON where practical.
+- Codex, Claude Code, OpenCode, and Pi wrappers support proof-only
+  `*_LITELLM_COMPRESSION_MODE=off`. This sends local
+  `X-LiteLLM-Proxy-Compression: off`, keeps provider routing through LiteLLM,
+  and records skipped compression rows for aggregate on/off comparison.
+  Copilot is excluded until its CLI exposes a documented request-header
+  surface.
 - Support claims require actual CLI usage series. One-off smoke commands can
   prove routing, but they do not prove useful aggregate cache behavior.
 
@@ -55,5 +61,9 @@ For the latest local runtime artifact pointers behind these labels, see
    provider surface matches LiteLLM directly.
 3. Keep Claude Code gated until LiteLLM has an Anthropic-compatible or
    otherwise Claude-compatible route that accepts the CLI's request shape.
-4. Keep Copilot and Pi at route-supported/cache-unproven until direct-vs-proxy
-   practical proof shows useful aggregate cache behavior for each CLI.
+4. Use compression-off baselines for OpenCode and Pi where direct provider
+   baselines are unavailable, then compare aggregate `gpt-5.5` provider usage
+   across real CLI series.
+5. Keep Copilot and Pi at route-supported/cache-unproven until direct-vs-proxy
+   or documented on/off practical proof shows useful aggregate cache behavior
+   for each CLI.

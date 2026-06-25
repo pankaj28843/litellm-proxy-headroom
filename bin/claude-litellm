@@ -12,6 +12,7 @@ if SRC_ROOT.exists():
     sys.path.insert(0, str(SRC_ROOT))
 
 from litellm_proxy_headroom.agent_cli.managed_home import (  # noqa: E402
+    compression_mode_header_value,
     default_home_path,
     find_real_executable,
     load_dotenv,
@@ -76,7 +77,13 @@ def header_value(value: str | None) -> str | None:
     return cleaned or None
 
 
-def merge_custom_headers(*, client: str, project: str | None, marker: str | None) -> None:
+def merge_custom_headers(
+    *,
+    client: str,
+    project: str | None,
+    marker: str | None,
+    compression_mode: str | None,
+) -> None:
     headers: list[str] = []
     existing = os.environ.get("ANTHROPIC_CUSTOM_HEADERS")
     if existing:
@@ -89,6 +96,8 @@ def merge_custom_headers(*, client: str, project: str | None, marker: str | None
         headers.append(f"X-LiteLLM-Proxy-Project: {cleaned_project}")
     if cleaned_marker:
         headers.append(f"X-LiteLLM-Proxy-Run: {cleaned_marker}")
+    if compression_mode:
+        headers.append(f"X-LiteLLM-Proxy-Compression: {compression_mode}")
     os.environ["ANTHROPIC_CUSTOM_HEADERS"] = "\n".join(headers)
 
 
@@ -150,6 +159,17 @@ def main(argv: list[str]) -> int:
         )
     except ValueError as exc:
         die(str(exc))
+    try:
+        compression_mode = compression_mode_header_value(
+            os.environ.get("CLAUDE_LITELLM_COMPRESSION_MODE"),
+            env_name="CLAUDE_LITELLM_COMPRESSION_MODE",
+        )
+    except ValueError as exc:
+        die(str(exc))
+    if compression_mode is None:
+        os.environ.pop("CLAUDE_LITELLM_COMPRESSION_MODE", None)
+    else:
+        os.environ["CLAUDE_LITELLM_COMPRESSION_MODE"] = compression_mode
 
     os.environ["ANTHROPIC_BASE_URL"] = anthropic_base_url
     os.environ.setdefault("CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY", "1")
@@ -159,6 +179,7 @@ def main(argv: list[str]) -> int:
         client=client,
         project=project,
         marker=os.environ.get("LITELLM_PROXY_RUN_MARKER"),
+        compression_mode=compression_mode,
     )
 
     home = managed_home()

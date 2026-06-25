@@ -390,6 +390,14 @@ LiteLLM wire model should differ. Current proof: real Copilot CLI
 LiteLLM; provider cached input is absent and observed cost is unavailable, so
 cache/cost usefulness is not claimed.
 
+For marker-capable wrappers, use `*_LITELLM_COMPRESSION_MODE=off` only as a
+proof baseline. Codex, Claude Code, OpenCode, and Pi normalize that setting to
+`X-LiteLLM-Proxy-Compression: off`; the callback records
+`litellm_proxy_compression_mode=off`, skips Headroom compression transforms,
+and still records provider usage rows for aggregate comparison. Copilot CLI is
+excluded because its documented BYOK surface does not expose local request
+headers.
+
 ## Agent-90 Usefulness Harness
 
 Use the A/B harness before making dashboard value claims. This is the

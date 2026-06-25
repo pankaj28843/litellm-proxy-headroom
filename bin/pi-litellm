@@ -13,6 +13,7 @@ if SRC_ROOT.exists():
     sys.path.insert(0, str(SRC_ROOT))
 
 from litellm_proxy_headroom.agent_cli.managed_home import (  # noqa: E402
+    compression_mode_header_value,
     default_home_path,
     find_real_executable,
     load_dotenv,
@@ -141,6 +142,7 @@ def models_config(model: str, small_model: str, *, base_url: str) -> dict[str, o
                     "X-LiteLLM-Proxy-Client": "$PI_LITELLM_CLIENT",
                     "X-LiteLLM-Proxy-Project": "$PI_LITELLM_PROJECT",
                     "X-LiteLLM-Proxy-Run": "$LITELLM_PROXY_RUN_MARKER",
+                    "X-LiteLLM-Proxy-Compression": "$PI_LITELLM_COMPRESSION_MODE",
                 },
                 "models": models,
             }
@@ -194,6 +196,17 @@ def main(argv: list[str]) -> int:
         )
     except ValueError as exc:
         die(str(exc))
+    try:
+        compression_mode = compression_mode_header_value(
+            os.environ.get("PI_LITELLM_COMPRESSION_MODE"),
+            env_name="PI_LITELLM_COMPRESSION_MODE",
+        )
+    except ValueError as exc:
+        die(str(exc))
+    if compression_mode is None:
+        os.environ.pop("PI_LITELLM_COMPRESSION_MODE", None)
+    else:
+        os.environ["PI_LITELLM_COMPRESSION_MODE"] = compression_mode
 
     if not os.environ.get("LITELLM_MASTER_KEY") and needs_api_key(argv):
         die(

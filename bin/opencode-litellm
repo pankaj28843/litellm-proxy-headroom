@@ -13,6 +13,7 @@ if SRC_ROOT.exists():
     sys.path.insert(0, str(SRC_ROOT))
 
 from litellm_proxy_headroom.agent_cli.managed_home import (  # noqa: E402
+    compression_mode_header_value,
     default_home_path,
     find_real_executable,
     load_dotenv,
@@ -127,6 +128,7 @@ def model_config(
                         "X-LiteLLM-Proxy-Client": "{env:OPENCODE_LITELLM_CLIENT}",
                         "X-LiteLLM-Proxy-Project": "{env:OPENCODE_LITELLM_PROJECT}",
                         "X-LiteLLM-Proxy-Run": "{env:LITELLM_PROXY_RUN_MARKER}",
+                        "X-LiteLLM-Proxy-Compression": "{env:OPENCODE_LITELLM_COMPRESSION_MODE}",
                     },
                 },
                 "models": models,
@@ -181,6 +183,17 @@ def main(argv: list[str]) -> int:
         )
     except ValueError as exc:
         die(str(exc))
+    try:
+        compression_mode = compression_mode_header_value(
+            os.environ.get("OPENCODE_LITELLM_COMPRESSION_MODE"),
+            env_name="OPENCODE_LITELLM_COMPRESSION_MODE",
+        )
+    except ValueError as exc:
+        die(str(exc))
+    if compression_mode is None:
+        os.environ.pop("OPENCODE_LITELLM_COMPRESSION_MODE", None)
+    else:
+        os.environ["OPENCODE_LITELLM_COMPRESSION_MODE"] = compression_mode
 
     model = validate_model(
         os.environ.get("OPENCODE_LITELLM_MODEL", "gpt-5.5"),

@@ -300,8 +300,10 @@ Current support levels are maintained in
 provider-row proof schema is in
 [docs/multi-cli-proof-contract.md](docs/multi-cli-proof-contract.md). Short
 version: Codex is the proven useful path, Claude Code is route-gated, OpenCode
-routes through LiteLLM but has no cache-usefulness proof yet, GitHub Copilot
-CLI routes through LiteLLM BYOK after upgrading to Copilot CLI 1.0.64, and Pi
+routes through LiteLLM but still has no cache-usefulness proof after the latest
+on/off practical comparison, GitHub Copilot CLI routes through LiteLLM BYOK
+after upgrading to Copilot CLI 1.0.65 but remains time-window/cache-unproven,
+and Pi
 routes through LiteLLM after upgrading to Pi 0.80.2 but is not useful on the
 latest `agent-90` versus compression-off practical proof. Do not claim
 non-Codex cache/cost savings without an aggregate practical proof.

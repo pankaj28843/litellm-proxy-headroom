@@ -13,7 +13,7 @@ and `anthropic-claude-docs`
 (`https://claude.com`, `https://platform.claude.com`,
 `https://www.anthropic.com`); local versions checked on 2026-06-25 are
 `codex-cli 0.142.0`, LiteLLM lockfile `1.89.3`, Claude Code `2.1.179`, OpenCode `1.1.34`, GitHub
-Copilot CLI `1.0.64` after `copilot update` from `1.0.7`, and Pi coding
+Copilot CLI `1.0.65` after `copilot update` from `1.0.64`, and Pi coding
 agent `0.80.2` after `npm install -g @earendil-works/pi-coding-agent@0.80.2`
 from `0.75.0`. Source clones were inspected under `tmp/cli-source` for Codex,
 OpenCode, Claude Code, Copilot CLI, and Pi. Gap: LiteLLM documents Claude Code
@@ -27,8 +27,8 @@ system-message request shape.
 |---|---|---:|---|---|
 | Codex CLI | Supported and proven | `~/.codex-headroom` | Generated Codex TOML provider using LiteLLM `/v1` Responses-compatible base URL and `OPENAI_API_KEY` from `LITELLM_MASTER_KEY`. | Actual `codex exec --json` series, smoke model `gpt-5.4-mini`, primary practical model `gpt-5.5`, aggregate provider usage/cache/DB proof, observed cost only when reported. |
 | Claude Code | Isolated wrapper, provider route gated | `~/.claude-headroom` | `ANTHROPIC_BASE_URL` plus both `ANTHROPIC_AUTH_TOKEN` and `ANTHROPIC_API_KEY` from `LITELLM_MASTER_KEY`, `--setting-sources project`, generated MCP config, strict MCP isolation, and local `X-LiteLLM-Proxy-*` headers via `ANTHROPIC_CUSTOM_HEADERS`. Current ChatGPT-backed LiteLLM aliases reject Claude Code system-message shape. | First prove an Anthropic-compatible or otherwise Claude-compatible LiteLLM model route satisfies Claude Code, then run a real Claude Code call series and aggregate provider/cache rows. |
-| OpenCode | Route supported, cache usefulness unproven | `~/.opencode-headroom` | Official OpenCode docs support custom OpenAI-compatible providers through `@ai-sdk/openai-compatible`, `options.baseURL`, model entries, and `{env:...}` or `{file:...}` secret references. | Practical `gpt-5.5` series routes through LiteLLM, but provider-reported cached input and observed cost are absent, so no cache/cost usefulness claim is made. |
-| GitHub Copilot CLI | Route supported, cache usefulness unproven | `~/.copilot-headroom` | Copilot CLI 1.0.64 documents local BYOK through `COPILOT_PROVIDER_BASE_URL`, `COPILOT_PROVIDER_TYPE=openai`, `COPILOT_PROVIDER_BEARER_TOKEN`, `COPILOT_PROVIDER_WIRE_API=responses`, and model env vars. | Real `gpt-5.4-mini` smoke and three-call `gpt-5.5` practical series routed through LiteLLM by time-window DB correlation. Cached input is absent and cost is unavailable, so no cache/cost usefulness claim is made. |
+| OpenCode | Route supported, cache usefulness unproven | `~/.opencode-headroom` | Official OpenCode docs support custom OpenAI-compatible providers through `@ai-sdk/openai-compatible`, `options.baseURL`, `options.headers`, model entries, and `{env:...}` or `{file:...}` secret references. | Matching real `gpt-5.5` OpenCode series compared normal `agent-90` with `OPENCODE_LITELLM_COMPRESSION_MODE=off`. Normal mode used `1232` fewer total provider tokens, but cached input was absent, observed cost was unavailable, and local compression saved `0` tokens, so no cache/cost usefulness claim is made. |
+| GitHub Copilot CLI | Route supported, cache usefulness unproven | `~/.copilot-headroom` | Copilot CLI 1.0.65 documents local BYOK through `COPILOT_PROVIDER_BASE_URL`, `COPILOT_PROVIDER_TYPE=openai`, `COPILOT_PROVIDER_BEARER_TOKEN`, `COPILOT_PROVIDER_WIRE_API=responses`, and model env vars, but still no request-header surface. | Real `gpt-5.4-mini` post-upgrade smoke routed through LiteLLM by narrow time-window DB correlation. Earlier three-call `gpt-5.5` practical series on 1.0.64 also routed through LiteLLM. Cached input is absent and cost is unavailable, so no cache/cost usefulness claim is made. |
 | Pi coding agent | Route supported, `agent-90` not useful on latest practical proof | `~/.pi-headroom` | Pi 0.80.2 documents `PI_CODING_AGENT_DIR` and custom `models.json` providers with `baseUrl`, `api: openai-responses`, `$LITELLM_MASTER_KEY`, custom headers, and model entries. | Matching real `gpt-5.5` Pi series compared normal `agent-90` with `PI_LITELLM_COMPRESSION_MODE=off`. Normal compression used `27327` more total provider tokens, `35044.40` more billing-equivalent input tokens, and had a cache-ratio delta of `-0.159897`; observed cost remains unavailable. |
 
 For the latest local runtime artifact pointers behind these labels, see
@@ -61,10 +61,12 @@ For the latest local runtime artifact pointers behind these labels, see
    provider surface matches LiteLLM directly.
 3. Keep Claude Code gated until LiteLLM has an Anthropic-compatible or
    otherwise Claude-compatible route that accepts the CLI's request shape.
-4. Use compression-off baselines for OpenCode and Pi where direct provider
-   baselines are unavailable, then compare aggregate `gpt-5.5` provider usage
-   across real CLI series.
-5. Keep Copilot at route-supported/cache-unproven until direct-vs-proxy or a
-   documented on/off practical proof shows useful aggregate cache behavior.
-   Pi is route-supported but not useful on the latest on/off proof, so do not
-   claim Pi compression value until a new practical comparison reverses that.
+4. Use compression-off baselines where direct provider baselines are
+   unavailable, then compare aggregate `gpt-5.5` provider usage across real CLI
+   series.
+5. Keep OpenCode and Copilot at route-supported/cache-unproven until
+   direct-vs-proxy or a documented on/off practical proof shows useful
+   aggregate cache behavior. Copilot remains time-window-correlated until a
+   request-header or equivalent marker surface appears. Pi is route-supported
+   but not useful on the latest on/off proof, so do not claim Pi compression
+   value until a new practical comparison reverses that.

@@ -299,7 +299,8 @@ Current support levels are maintained in
 [docs/agent-cli-support.md](docs/agent-cli-support.md), and the shared
 provider-row proof schema is in
 [docs/multi-cli-proof-contract.md](docs/multi-cli-proof-contract.md). Short
-version: Codex is the proven useful path, Claude Code is route-gated, OpenCode
+version: Codex is the proven useful path, Claude Code is still route-gated on
+the current ChatGPT-backed `gpt-5.x` deployment, OpenCode
 routes through LiteLLM but still has no cache-usefulness proof after the latest
 on/off practical comparison, GitHub Copilot CLI routes through LiteLLM BYOK
 after upgrading to Copilot CLI 1.0.65 but remains time-window/cache-unproven,

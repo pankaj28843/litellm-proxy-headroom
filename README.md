@@ -278,6 +278,9 @@ Use the repo-owned wrappers when running agent CLIs through this LiteLLM stack:
 ./bin/opencode-litellm run --format json "reply with a short health marker"
 
 ./bin/copilot-litellm --version
+
+./bin/pi-litellm --version
+./bin/pi-litellm --mode json --no-tools -p "reply with a short health marker"
 ```
 
 These wrappers read `.env`, do not print secret values, and generate non-secret
@@ -289,6 +292,7 @@ ln -sf "$PWD/bin/codex-litellm" "$HOME/.local/bin/codex-litellm"
 ln -sf "$PWD/bin/claude-litellm" "$HOME/.local/bin/claude-litellm"
 ln -sf "$PWD/bin/opencode-litellm" "$HOME/.local/bin/opencode-litellm"
 ln -sf "$PWD/bin/copilot-litellm" "$HOME/.local/bin/copilot-litellm"
+ln -sf "$PWD/bin/pi-litellm" "$HOME/.local/bin/pi-litellm"
 ```
 
 Current support levels are maintained in
@@ -296,9 +300,10 @@ Current support levels are maintained in
 provider-row proof schema is in
 [docs/multi-cli-proof-contract.md](docs/multi-cli-proof-contract.md). Short
 version: Codex is the proven useful path, Claude Code is route-gated, OpenCode
-routes through LiteLLM but has no cache-usefulness proof yet, and GitHub
-Copilot CLI now routes through LiteLLM BYOK after upgrading to Copilot CLI
-1.0.64, but has no cache-usefulness proof yet.
+routes through LiteLLM but has no cache-usefulness proof yet, GitHub Copilot
+CLI routes through LiteLLM BYOK after upgrading to Copilot CLI 1.0.64, and Pi
+routes through LiteLLM after upgrading to Pi 0.80.2. The non-Codex routes still
+need direct-vs-proxy usefulness proof before any cache/cost savings claim.
 
 `bin/codex-litellm` sets `CODEX_HOME` to the managed `~/.codex-headroom`
 directory, writes `config.toml` and `litellm.config.toml`, symlinks native
@@ -325,6 +330,14 @@ base URL used by both `OPENAI_BASE_URL` and the generated Codex provider. Set
 `model_reasoning_effort`. Set `CODEX_LITELLM_MODEL_VERBOSITY` to `low`,
 `medium`, or `high` when the isolated profile should pin Codex
 `model_verbosity`.
+
+`bin/pi-litellm` sets `PI_CODING_AGENT_DIR` to managed `~/.pi-headroom`, writes
+`models.json` with a custom `litellm` provider using the OpenAI Responses API,
+and maps `PI_LITELLM_MODEL` plus `PI_LITELLM_SMALL_MODEL` to generated model
+entries. The generated config references `LITELLM_MASTER_KEY` as an environment
+variable and sends local `X-LiteLLM-Proxy-*` attribution headers through Pi's
+documented custom-provider header config. The wrapper defaults to `gpt-5.5`;
+use `PI_LITELLM_MODEL=gpt-5.4-mini` only for smoke routing.
 
 `bin/claude-litellm` sets Claude Code's LiteLLM gateway environment, maps
 `LITELLM_MASTER_KEY` to both Anthropic API key env names used by Claude Code,

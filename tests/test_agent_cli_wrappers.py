@@ -44,6 +44,9 @@ capture = {
     "copilot_provider_transport": os.environ.get("COPILOT_PROVIDER_TRANSPORT"),
     "copilot_provider_model_id": os.environ.get("COPILOT_PROVIDER_MODEL_ID"),
     "copilot_provider_wire_model": os.environ.get("COPILOT_PROVIDER_WIRE_MODEL"),
+    "pi_coding_agent_dir": os.environ.get("PI_CODING_AGENT_DIR"),
+    "pi_litellm_client": os.environ.get("PI_LITELLM_CLIENT"),
+    "pi_litellm_project": os.environ.get("PI_LITELLM_PROJECT"),
     "xdg_config_home": os.environ.get("XDG_CONFIG_HOME"),
     "xdg_data_home": os.environ.get("XDG_DATA_HOME"),
     "xdg_cache_home": os.environ.get("XDG_CACHE_HOME"),
@@ -88,6 +91,11 @@ def test_wrapper_scripts_have_valid_syntax() -> None:
     )
     subprocess.run(
         ["python3", "-m", "py_compile", str(REPO_ROOT / "bin/copilot-litellm")],
+        check=True,
+        cwd=REPO_ROOT,
+    )
+    subprocess.run(
+        ["python3", "-m", "py_compile", str(REPO_ROOT / "bin/pi-litellm")],
         check=True,
         cwd=REPO_ROOT,
     )
@@ -871,6 +879,156 @@ def test_opencode_wrapper_rejects_litellm_base_url_with_credentials(
     assert "OPENCODE_LITELLM_BASE_URL" in result.stderr
     assert not capture_path.exists()
     assert not (managed_home / "opencode.json").exists()
+
+
+def test_pi_wrapper_generates_managed_models_config_and_env(tmp_path: Path) -> None:
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    _write_fake_cli(fake_bin / "pi")
+    capture_path = tmp_path / "capture.json"
+    managed_home = tmp_path / "pi-home"
+
+    env = _base_env(fake_bin, capture_path)
+    env["HOME"] = str(tmp_path)
+    env["PI_LITELLM_HOME"] = str(managed_home)
+    env["PI_LITELLM_MODEL"] = "gpt-5.5"
+    env["PI_LITELLM_SMALL_MODEL"] = "gpt-5.4-mini"
+
+    subprocess.run(
+        [str(REPO_ROOT / "bin/pi-litellm"), "-p", "health marker"],
+        check=True,
+        cwd=REPO_ROOT,
+        env=env,
+    )
+
+    capture = json.loads(capture_path.read_text())
+    models_path = managed_home / "models.json"
+    assert capture["args"] == [
+        "--provider",
+        "litellm",
+        "--model",
+        "gpt-5.5",
+        "-p",
+        "health marker",
+    ]
+    assert capture["pi_coding_agent_dir"] == str(managed_home)
+    assert capture["pi_litellm_client"] == "pi"
+    assert capture["pi_litellm_project"] == "litellm-proxy-headroom"
+    assert not (tmp_path / ".pi" / "agent").exists()
+
+    config = json.loads(models_path.read_text())
+    provider = config["providers"]["litellm"]
+    assert provider["baseUrl"] == "http://127.0.0.1:4000/v1"
+    assert provider["api"] == "openai-responses"
+    assert provider["apiKey"] == "$LITELLM_MASTER_KEY"
+    assert provider["models"] == [
+        {
+            "id": "gpt-5.5",
+            "name": "gpt-5.5",
+            "reasoning": True,
+            "input": ["text"],
+            "contextWindow": 400000,
+            "maxTokens": 128000,
+            "compat": {"sendSessionIdHeader": False},
+        },
+        {
+            "id": "gpt-5.4-mini",
+            "name": "gpt-5.4-mini",
+            "reasoning": True,
+            "input": ["text"],
+            "contextWindow": 400000,
+            "maxTokens": 128000,
+            "compat": {"sendSessionIdHeader": False},
+        },
+    ]
+    assert provider["headers"] == {
+        "X-LiteLLM-Proxy-Client": "$PI_LITELLM_CLIENT",
+        "X-LiteLLM-Proxy-Project": "$PI_LITELLM_PROJECT",
+        "X-LiteLLM-Proxy-Run": "$LITELLM_PROXY_RUN_MARKER",
+    }
+    assert "sk-test-wrapper-key" not in models_path.read_text()
+
+
+def test_pi_wrapper_respects_existing_model_argument(tmp_path: Path) -> None:
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    _write_fake_cli(fake_bin / "pi")
+    capture_path = tmp_path / "capture.json"
+    managed_home = tmp_path / "pi-home"
+
+    env = _base_env(fake_bin, capture_path)
+    env["PI_LITELLM_HOME"] = str(managed_home)
+
+    subprocess.run(
+        [
+            str(REPO_ROOT / "bin/pi-litellm"),
+            "--model",
+            "litellm/gpt-5.4-mini",
+            "-p",
+            "health marker",
+        ],
+        check=True,
+        cwd=REPO_ROOT,
+        env=env,
+    )
+
+    capture = json.loads(capture_path.read_text())
+    assert capture["args"] == [
+        "--model",
+        "litellm/gpt-5.4-mini",
+        "-p",
+        "health marker",
+    ]
+
+
+def test_pi_wrapper_does_not_add_model_to_management_commands(
+    tmp_path: Path,
+) -> None:
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    _write_fake_cli(fake_bin / "pi")
+    capture_path = tmp_path / "capture.json"
+    managed_home = tmp_path / "pi-home"
+
+    env = _base_env(fake_bin, capture_path)
+    env["PI_LITELLM_HOME"] = str(managed_home)
+
+    subprocess.run(
+        [str(REPO_ROOT / "bin/pi-litellm"), "--version"],
+        check=True,
+        cwd=REPO_ROOT,
+        env=env,
+    )
+
+    capture = json.loads(capture_path.read_text())
+    assert capture["args"] == ["--version"]
+
+
+def test_pi_wrapper_rejects_litellm_base_url_with_credentials(
+    tmp_path: Path,
+) -> None:
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    _write_fake_cli(fake_bin / "pi")
+    capture_path = tmp_path / "capture.json"
+    managed_home = tmp_path / "pi-home"
+
+    env = _base_env(fake_bin, capture_path)
+    env["PI_LITELLM_HOME"] = str(managed_home)
+    env["PI_LITELLM_BASE_URL"] = "http://user:secret@127.0.0.1:4000"
+
+    result = subprocess.run(
+        [str(REPO_ROOT / "bin/pi-litellm"), "-p", "health marker"],
+        cwd=REPO_ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 1
+    assert "PI_LITELLM_BASE_URL" in result.stderr
+    assert not capture_path.exists()
+    assert not (managed_home / "models.json").exists()
 
 
 def test_copilot_wrapper_defaults_to_managed_home(tmp_path: Path) -> None:

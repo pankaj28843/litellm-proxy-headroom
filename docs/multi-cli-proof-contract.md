@@ -1,8 +1,8 @@
 # Multi-CLI Proof Contract
 
 This contract keeps CLI support claims comparable across Codex, Claude Code,
-OpenCode, GitHub Copilot CLI, and later wrappers. It is intentionally based on
-real CLI commands and LiteLLM analytics rows, not one-off provider calls.
+OpenCode, GitHub Copilot CLI, Pi, and later wrappers. It is intentionally based
+on real CLI commands and LiteLLM analytics rows, not one-off provider calls.
 
 ## Required Proof Fields
 
@@ -10,7 +10,7 @@ Every supported or route-tested CLI proof must record:
 
 | Field | Meaning |
 |---|---|
-| `cli` | Stable CLI label such as `codex`, `claude`, `opencode`, or `copilot`. |
+| `cli` | Stable CLI label such as `codex`, `claude`, `opencode`, `copilot`, or `pi`. |
 | `wrapper` | Repo wrapper path and managed home, such as `bin/opencode-litellm` and `~/.opencode-headroom`. |
 | `support_status` | `supported_useful`, `route_supported_cache_unproven`, `route_gated`, `isolation_only`, or `unsupported`. |
 | `marker` | `LITELLM_PROXY_RUN_MARKER` or an explicit time-window fallback when the CLI cannot carry a marker. |
@@ -37,6 +37,7 @@ Every supported or route-tested CLI proof must record:
 | Claude Code | `route_gated` | Real `gpt-5.4-mini` Claude Code smoke and `--bare` smoke reached LiteLLM and analytics MCP, but failed with `System messages are not allowed` on the current ChatGPT-backed model group. |
 | OpenCode | `route_supported_cache_unproven` | Real `opencode run --format json` smoke and practical `gpt-5.5` series routed through LiteLLM with marker-correlated provider rows. Practical aggregate had input `51648`, cached input absent, output `674`, reasoning `314`, total `52322`, cost unavailable. |
 | GitHub Copilot CLI | `route_supported_cache_unproven` | After upgrading Copilot CLI from `1.0.7` to `1.0.64`, `bin/copilot-litellm` uses the documented local BYOK provider env vars to route through LiteLLM. Real smoke and practical series reached `/v1/responses`, but cached input is absent and cost is unavailable. |
+| Pi coding agent | `route_supported_cache_unproven` | After upgrading Pi from `0.75.0` to `0.80.2`, `bin/pi-litellm` uses managed `~/.pi-headroom` plus custom `models.json` provider routing to LiteLLM. Real smoke and practical series reached `/v1/responses`; provider cache was observed, but usefulness remains unproven without direct-vs-proxy comparison and cost is unavailable. |
 
 ## Latest Evidence Pointers
 
@@ -50,6 +51,7 @@ current support labels.
 | Claude Code | `route_gated` | `tmp/claude-route-proof/claude-route-20260624T1933-bare-wrapper-auth/stdout.jsonl` shows real Claude Code reached LiteLLM and analytics MCP, then failed on the ChatGPT-backed model group with `System messages are not allowed`. |
 | OpenCode | `route_supported_cache_unproven` | `tmp/multi-cli-proof/opencode-practical-20260624T1950/proof.json` normalizes the real `gpt-5.5` OpenCode series and DB rows; cached input is `absent` and cost is `unavailable`. |
 | GitHub Copilot CLI | `route_supported_cache_unproven` | `tmp/copilot-route-proof/copilot-practical-20260624T182754Z/proof.json` normalizes three real `gpt-5.5` Copilot CLI BYOK runs after upgrade to `1.0.64`; aggregate input `265448`, cached input `absent`, output `1848`, reasoning `142`, total `267296`, cost `unavailable`. Smoke artifact: `tmp/copilot-route-proof/copilot-smoke-20260624T182552Z/proof.json`. |
+| Pi coding agent | `route_supported_cache_unproven` | `tmp/pi-route-proof/pi-practical-20260625T002659Z/proof.json` normalizes three real `gpt-5.5` Pi CLI runs after upgrade to `0.80.2`; aggregate input `93352`, cached input `9216`, cache ratio `0.098723`, output `296`, reasoning `67`, total `93648`, cost `unavailable`. Smoke artifact: `tmp/pi-route-proof/pi-smoke-20260625T002534Z/proof.json`. |
 
 ## Query Shape
 

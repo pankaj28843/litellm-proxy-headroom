@@ -1,0 +1,236 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import json
+import os
+import re
+import sys
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+SRC_ROOT = REPO_ROOT / "src"
+if SRC_ROOT.exists():
+    sys.path.insert(0, str(SRC_ROOT))
+
+from litellm_proxy_headroom.agent_cli.managed_home import (  # noqa: E402
+    default_home_path,
+    find_real_executable,
+    load_dotenv,
+    normalize_base_url,
+    project_name_from_cwd,
+)
+
+MANAGED_HOME_NAME = ".pi-headroom"
+PROVIDER_ID = "litellm"
+MODEL_RE = re.compile(r"^[A-Za-z0-9_.:/-]+$")
+NO_MODEL_COMMANDS = {
+    "-h",
+    "--help",
+    "-v",
+    "--version",
+    "help",
+    "install",
+    "remove",
+    "uninstall",
+    "update",
+    "list",
+    "config",
+}
+
+
+def die(message: str, code: int = 1) -> None:
+    print(f"pi-litellm: {message}", file=sys.stderr)
+    raise SystemExit(code)
+
+
+def default_managed_home() -> Path:
+    return default_home_path(
+        MANAGED_HOME_NAME,
+        fallback=REPO_ROOT / "tmp" / "pi-headroom-home",
+    )
+
+
+def managed_home() -> Path:
+    raw = os.environ.get("PI_LITELLM_HOME")
+    if raw:
+        return Path(raw).expanduser()
+    return default_managed_home()
+
+
+def needs_api_key(argv: list[str]) -> bool:
+    return not any(arg in NO_MODEL_COMMANDS for arg in argv)
+
+
+def validate_model(model: str, *, env_name: str) -> str:
+    if not model or not MODEL_RE.match(model):
+        die(f"{env_name} contains unsupported characters.")
+    return model
+
+
+def option_value(argv: list[str], *names: str) -> str | None:
+    expect_value = False
+    for arg in argv:
+        if expect_value:
+            return arg
+        if arg in names:
+            expect_value = True
+            continue
+        for name in names:
+            if arg.startswith(f"{name}="):
+                return arg.split("=", 1)[1]
+    if expect_value:
+        die(f"{names[0]} requires a value.")
+    return None
+
+
+def has_model_arg(argv: list[str]) -> bool:
+    return option_value(argv, "--model") is not None
+
+
+def has_provider_arg(argv: list[str]) -> bool:
+    return option_value(argv, "--provider") is not None
+
+
+def first_command(argv: list[str]) -> str:
+    expect_value_for = {"--provider", "--model", "--api-key", "--mode", "--session"}
+    skip_next = False
+    for arg in argv:
+        if skip_next:
+            skip_next = False
+            continue
+        if arg in expect_value_for:
+            skip_next = True
+            continue
+        if arg.startswith("-"):
+            continue
+        return arg
+    return ""
+
+
+def should_add_model_args(argv: list[str]) -> bool:
+    if any(arg in NO_MODEL_COMMANDS for arg in argv):
+        return False
+    return first_command(argv) not in NO_MODEL_COMMANDS
+
+
+def model_entry(model: str) -> dict[str, object]:
+    return {
+        "id": model,
+        "name": model,
+        "reasoning": True,
+        "input": ["text"],
+        "contextWindow": 400000,
+        "maxTokens": 128000,
+        "compat": {
+            "sendSessionIdHeader": False,
+        },
+    }
+
+
+def models_config(model: str, small_model: str, *, base_url: str) -> dict[str, object]:
+    models = [model_entry(model)]
+    if small_model != model:
+        models.append(model_entry(small_model))
+    return {
+        "providers": {
+            PROVIDER_ID: {
+                "baseUrl": base_url,
+                "api": os.environ.get("PI_LITELLM_API", "openai-responses"),
+                "apiKey": "$LITELLM_MASTER_KEY",
+                "headers": {
+                    "X-LiteLLM-Proxy-Client": "$PI_LITELLM_CLIENT",
+                    "X-LiteLLM-Proxy-Project": "$PI_LITELLM_PROJECT",
+                    "X-LiteLLM-Proxy-Run": "$LITELLM_PROXY_RUN_MARKER",
+                },
+                "models": models,
+            }
+        }
+    }
+
+
+def write_config(path: Path, data: dict[str, object]) -> None:
+    path.write_text(
+        json.dumps(data, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+
+def real_pi() -> str:
+    try:
+        return find_real_executable(binary_name="pi", wrapper_path=Path(__file__))
+    except FileNotFoundError:
+        die("could not find a pi binary on PATH other than this wrapper.", code=127)
+
+
+def default_extra_args(argv: list[str], *, model: str) -> list[str]:
+    if not should_add_model_args(argv):
+        return []
+    provider = option_value(argv, "--provider")
+    if provider and provider != PROVIDER_ID:
+        if os.environ.get("PI_LITELLM_ALLOW_PROVIDER_OVERRIDE") == "1":
+            return []
+        die(
+            "refusing to use a non-LiteLLM provider in pi-litellm; "
+            "set PI_LITELLM_ALLOW_PROVIDER_OVERRIDE=1 only for deliberate debugging."
+        )
+    extra_args: list[str] = []
+    if not has_provider_arg(argv) and not (
+        (existing_model := option_value(argv, "--model")) and "/" in existing_model
+    ):
+        extra_args.extend(["--provider", PROVIDER_ID])
+    if not has_model_arg(argv):
+        extra_args.extend(["--model", model])
+    return extra_args
+
+
+def main(argv: list[str]) -> int:
+    load_dotenv(REPO_ROOT / ".env")
+
+    try:
+        litellm_base_url = normalize_base_url(
+            os.environ.get("PI_LITELLM_BASE_URL", "http://127.0.0.1:4000"),
+            env_name="PI_LITELLM_BASE_URL",
+            suffix="/v1",
+        )
+    except ValueError as exc:
+        die(str(exc))
+
+    if not os.environ.get("LITELLM_MASTER_KEY") and needs_api_key(argv):
+        die(
+            f"LITELLM_MASTER_KEY is not set; add it to {REPO_ROOT / '.env'} or the environment."
+        )
+
+    model = validate_model(
+        os.environ.get("PI_LITELLM_MODEL", "gpt-5.5"),
+        env_name="PI_LITELLM_MODEL",
+    )
+    small_model = validate_model(
+        os.environ.get("PI_LITELLM_SMALL_MODEL", "gpt-5.4-mini"),
+        env_name="PI_LITELLM_SMALL_MODEL",
+    )
+
+    home = managed_home()
+    home.mkdir(parents=True, exist_ok=True)
+    write_config(
+        home / "models.json",
+        models_config(model, small_model, base_url=litellm_base_url),
+    )
+
+    os.environ["PI_CODING_AGENT_DIR"] = str(home)
+    os.environ.setdefault("PI_LITELLM_CLIENT", "pi")
+    if "PI_LITELLM_PROJECT" not in os.environ:
+        project = project_name_from_cwd()
+        if project:
+            os.environ["PI_LITELLM_PROJECT"] = project
+
+    executable = real_pi()
+    os.execvpe(
+        executable,
+        [executable, *default_extra_args(argv, model=model), *argv],
+        os.environ.copy(),
+    )
+    return 127
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))

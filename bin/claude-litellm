@@ -16,6 +16,7 @@ from litellm_proxy_headroom.agent_cli.managed_home import (  # noqa: E402
     find_real_executable,
     load_dotenv,
     normalize_base_url,
+    project_name_from_cwd,
     truthy_env,
 )
 
@@ -66,6 +67,29 @@ def write_mcp_config(path: Path, *, analytics_mcp_url: str) -> None:
     path.write_text(
         json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
+
+
+def header_value(value: str | None) -> str | None:
+    if value is None:
+        return None
+    cleaned = value.replace("\r", " ").replace("\n", " ").strip()
+    return cleaned or None
+
+
+def merge_custom_headers(*, client: str, project: str | None, marker: str | None) -> None:
+    headers: list[str] = []
+    existing = os.environ.get("ANTHROPIC_CUSTOM_HEADERS")
+    if existing:
+        headers.extend(line for line in existing.splitlines() if line.strip())
+    cleaned_client = header_value(client) or "claude"
+    cleaned_project = header_value(project)
+    cleaned_marker = header_value(marker)
+    headers.append(f"X-LiteLLM-Proxy-Client: {cleaned_client}")
+    if cleaned_project:
+        headers.append(f"X-LiteLLM-Proxy-Project: {cleaned_project}")
+    if cleaned_marker:
+        headers.append(f"X-LiteLLM-Proxy-Run: {cleaned_marker}")
+    os.environ["ANTHROPIC_CUSTOM_HEADERS"] = "\n".join(headers)
 
 
 def real_claude() -> str:
@@ -129,6 +153,13 @@ def main(argv: list[str]) -> int:
 
     os.environ["ANTHROPIC_BASE_URL"] = anthropic_base_url
     os.environ.setdefault("CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY", "1")
+    client = os.environ.get("CLAUDE_LITELLM_CLIENT", "claude")
+    project = os.environ.get("CLAUDE_LITELLM_PROJECT") or project_name_from_cwd()
+    merge_custom_headers(
+        client=client,
+        project=project,
+        marker=os.environ.get("LITELLM_PROXY_RUN_MARKER"),
+    )
 
     home = managed_home()
     home.mkdir(parents=True, exist_ok=True)

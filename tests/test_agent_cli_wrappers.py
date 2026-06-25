@@ -27,6 +27,7 @@ capture = {
     "openai_api_key_present": bool(os.environ.get("OPENAI_API_KEY")),
     "openai_base_url": os.environ.get("OPENAI_BASE_URL"),
     "anthropic_base_url": os.environ.get("ANTHROPIC_BASE_URL"),
+    "anthropic_custom_headers": os.environ.get("ANTHROPIC_CUSTOM_HEADERS"),
     "anthropic_auth_token_present": bool(os.environ.get("ANTHROPIC_AUTH_TOKEN")),
     "anthropic_api_key_present": bool(os.environ.get("ANTHROPIC_API_KEY")),
     "opencode_config": os.environ.get("OPENCODE_CONFIG"),
@@ -660,6 +661,12 @@ def test_claude_wrapper_generates_mcp_config_and_gateway_env(tmp_path: Path) -> 
     assert capture["anthropic_base_url"] == "http://127.0.0.1:4000"
     assert capture["anthropic_auth_token_present"] is True
     assert capture["anthropic_api_key_present"] is True
+    assert capture["anthropic_custom_headers"] == "\n".join(
+        [
+            "X-LiteLLM-Proxy-Client: claude",
+            "X-LiteLLM-Proxy-Project: litellm-proxy-headroom",
+        ]
+    )
     assert capture["gateway_model_discovery"] == "1"
     assert capture["args"] == [
         "--setting-sources",
@@ -685,6 +692,40 @@ def test_claude_wrapper_generates_mcp_config_and_gateway_env(tmp_path: Path) -> 
         }
     }
     assert "sk-test-wrapper-key" not in (state_dir / "mcp.json").read_text()
+
+
+def test_claude_wrapper_preserves_existing_custom_headers_and_adds_run_marker(
+    tmp_path: Path,
+) -> None:
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    _write_fake_cli(fake_bin / "claude")
+    capture_path = tmp_path / "capture.json"
+    state_dir = tmp_path / "claude-state"
+
+    env = _base_env(fake_bin, capture_path)
+    env["CLAUDE_LITELLM_STATE_DIR"] = str(state_dir)
+    env["ANTHROPIC_CUSTOM_HEADERS"] = "x-existing: value"
+    env["LITELLM_PROXY_RUN_MARKER"] = "CLAUDE-RUN-1"
+    env["CLAUDE_LITELLM_CLIENT"] = "claude-smoke"
+    env["CLAUDE_LITELLM_PROJECT"] = "project\none"
+
+    subprocess.run(
+        [str(REPO_ROOT / "bin/claude-litellm"), "--print", "health marker"],
+        check=True,
+        cwd=REPO_ROOT,
+        env=env,
+    )
+
+    capture = json.loads(capture_path.read_text())
+    assert capture["anthropic_custom_headers"] == "\n".join(
+        [
+            "x-existing: value",
+            "X-LiteLLM-Proxy-Client: claude-smoke",
+            "X-LiteLLM-Proxy-Project: project one",
+            "X-LiteLLM-Proxy-Run: CLAUDE-RUN-1",
+        ]
+    )
 
 
 def test_claude_wrapper_defaults_to_managed_home(tmp_path: Path) -> None:

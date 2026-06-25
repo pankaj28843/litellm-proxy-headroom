@@ -347,12 +347,19 @@ by default. Set `CLAUDE_LITELLM_HOME` to move that managed home, or
 `CLAUDE_LITELLM_STATE_DIR` for compatibility with earlier wrapper tests/scripts.
 Set `CLAUDE_LITELLM_BASE_URL` when LiteLLM is not on `http://127.0.0.1:4000`,
 and `CLAUDE_LITELLM_ANALYTICS_URL` when analytics is not on
-`http://127.0.0.1:8010`. The wrapper validates those URLs before writing
-managed config and never writes `LITELLM_MASTER_KEY` into `mcp.json`. With the
-current ChatGPT-backed model aliases, real Claude Code smoke reached LiteLLM
-and analytics but failed with a 400 because the model group rejects Claude
-Code's system-message request shape. Claude Code remains route-gated until an
-Anthropic-compatible LiteLLM model route is proven.
+`http://127.0.0.1:8010`. The wrapper also appends local
+`X-LiteLLM-Proxy-Client`, `X-LiteLLM-Proxy-Project`, and optional
+`X-LiteLLM-Proxy-Run` headers through Claude Code's `ANTHROPIC_CUSTOM_HEADERS`
+surface for analytics correlation. It preserves existing custom headers and
+does not write them to generated files. The wrapper validates URLs before
+writing managed config and never writes `LITELLM_MASTER_KEY` into `mcp.json`.
+LiteLLM's Claude Code docs describe `/v1/messages` routing for non-Anthropic
+models, but the current deployment only has ChatGPT-backed `gpt-5.x` aliases.
+Fresh real Claude Code smoke reached LiteLLM and analytics, produced
+marker-correlated failed DB rows, and still failed with a 400 because that model
+group rejects Claude Code's system-message request shape. Claude Code remains
+route-gated until an Anthropic-compatible or otherwise Claude-compatible
+LiteLLM model route is proven.
 
 `bin/opencode-litellm` sets OpenCode's config and XDG state roots under the
 managed `~/.opencode-headroom` home by default, writes a generated

@@ -303,7 +303,8 @@ version: Codex is the proven useful path, Claude Code is still route-gated on
 the current ChatGPT-backed `gpt-5.x` deployment, OpenCode
 routes through LiteLLM but still has no cache-usefulness proof after the latest
 on/off practical comparison, GitHub Copilot CLI routes through LiteLLM BYOK
-after upgrading to Copilot CLI 1.0.65 but remains time-window/cache-unproven,
+after upgrading to Copilot CLI 1.0.65 and a current three-call `gpt-5.5`
+practical series, but remains time-window/cache-unproven,
 and Pi
 routes through LiteLLM after upgrading to Pi 0.80.2 but is not useful on the
 latest `agent-90` versus compression-off practical proof. Do not claim
@@ -393,10 +394,12 @@ the local LiteLLM OpenAI-compatible endpoint. It maps `LITELLM_MASTER_KEY` to
 `COPILOT_PROVIDER_WIRE_API=responses` for GPT-5.x models. Set
 `COPILOT_LITELLM_MODEL`, `COPILOT_LITELLM_PROVIDER_MODEL_ID`, or
 `COPILOT_LITELLM_WIRE_MODEL` when Copilot's agent configuration model and the
-LiteLLM wire model should differ. Current proof: real Copilot CLI
+LiteLLM wire model should differ. Current proof: real Copilot CLI 1.0.65
 `gpt-5.4-mini` smoke and three-call `gpt-5.5` practical series route through
-LiteLLM; provider cached input is absent and observed cost is unavailable, so
-cache/cost usefulness is not claimed.
+LiteLLM by narrow time-window DB correlation. The latest practical aggregate
+has 3 provider-reported `/v1/responses` rows, input `47216`, total `47482`,
+cached input absent, and observed cost unavailable, so cache/cost usefulness is
+not claimed.
 
 For marker-capable wrappers, use `*_LITELLM_COMPRESSION_MODE=off` only as a
 proof baseline. Codex, Claude Code, OpenCode, and Pi normalize that setting to

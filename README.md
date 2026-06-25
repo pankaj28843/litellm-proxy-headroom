@@ -302,8 +302,9 @@ provider-row proof schema is in
 version: Codex is the proven useful path, Claude Code is route-gated, OpenCode
 routes through LiteLLM but has no cache-usefulness proof yet, GitHub Copilot
 CLI routes through LiteLLM BYOK after upgrading to Copilot CLI 1.0.64, and Pi
-routes through LiteLLM after upgrading to Pi 0.80.2. The non-Codex routes still
-need direct-vs-proxy usefulness proof before any cache/cost savings claim.
+routes through LiteLLM after upgrading to Pi 0.80.2 but is not useful on the
+latest `agent-90` versus compression-off practical proof. Do not claim
+non-Codex cache/cost savings without an aggregate practical proof.
 
 `bin/codex-litellm` sets `CODEX_HOME` to the managed `~/.codex-headroom`
 directory, writes `config.toml` and `litellm.config.toml`, symlinks native
@@ -337,7 +338,11 @@ and maps `PI_LITELLM_MODEL` plus `PI_LITELLM_SMALL_MODEL` to generated model
 entries. The generated config references `LITELLM_MASTER_KEY` as an environment
 variable and sends local `X-LiteLLM-Proxy-*` attribution headers through Pi's
 documented custom-provider header config. The wrapper defaults to `gpt-5.5`;
-use `PI_LITELLM_MODEL=gpt-5.4-mini` only for smoke routing.
+use `PI_LITELLM_MODEL=gpt-5.4-mini` only for smoke routing. Latest Pi
+practical proof compared normal `agent-90` with
+`PI_LITELLM_COMPRESSION_MODE=off`; normal compression used `27327` more total
+provider tokens and `35044.40` more billing-equivalent input tokens, with cost
+still unavailable.
 
 `bin/claude-litellm` sets Claude Code's LiteLLM gateway environment, maps
 `LITELLM_MASTER_KEY` to both Anthropic API key env names used by Claude Code,

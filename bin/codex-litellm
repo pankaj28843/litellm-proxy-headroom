@@ -84,18 +84,20 @@ def load_native_config(path: Path) -> dict[str, object]:
     return data if isinstance(data, dict) else {}
 
 
-def litellm_provider(base_url: str) -> dict[str, object]:
+def litellm_provider(base_url: str, *, compression_mode: str | None) -> dict[str, object]:
+    headers = {
+        "X-LiteLLM-Proxy-Client": "CODEX_LITELLM_CLIENT",
+        "X-LiteLLM-Proxy-Project": "CODEX_LITELLM_PROJECT",
+        "X-LiteLLM-Proxy-Run": "LITELLM_PROXY_RUN_MARKER",
+    }
+    if compression_mode:
+        headers["X-LiteLLM-Proxy-Compression"] = "CODEX_LITELLM_COMPRESSION_MODE"
     return {
         "name": "Local LiteLLM",
         "base_url": base_url,
         "env_key": "OPENAI_API_KEY",
         "wire_api": "responses",
-        "env_http_headers": {
-            "X-LiteLLM-Proxy-Client": "CODEX_LITELLM_CLIENT",
-            "X-LiteLLM-Proxy-Project": "CODEX_LITELLM_PROJECT",
-            "X-LiteLLM-Proxy-Run": "LITELLM_PROXY_RUN_MARKER",
-            "X-LiteLLM-Proxy-Compression": "CODEX_LITELLM_COMPRESSION_MODE",
-        },
+        "env_http_headers": headers,
     }
 
 
@@ -136,6 +138,7 @@ def managed_config(
     inherit_native_config: bool,
     litellm_base_url: str,
     analytics_mcp_url: str,
+    compression_mode: str | None,
 ) -> tuple[dict[str, object], dict[str, object]]:
     data: dict[str, object] = dict(native_config) if inherit_native_config else {}
     for key in SENSITIVE_TOP_LEVEL_KEYS:
@@ -159,7 +162,9 @@ def managed_config(
 
     providers = dict(data.get("model_providers") or {})
     providers.pop("headroom", None)
-    providers[PROFILE_NAME] = litellm_provider(litellm_base_url)
+    providers[PROFILE_NAME] = litellm_provider(
+        litellm_base_url, compression_mode=compression_mode
+    )
     data["model_providers"] = providers
 
     mcp_servers = dict(data.get("mcp_servers") or {})
@@ -175,7 +180,11 @@ def managed_config(
         "model": model,
         "model_provider": PROFILE_NAME,
         "openai_base_url": litellm_base_url,
-        "model_providers": {PROFILE_NAME: litellm_provider(litellm_base_url)},
+        "model_providers": {
+            PROFILE_NAME: litellm_provider(
+                litellm_base_url, compression_mode=compression_mode
+            )
+        },
     }
     if effort:
         profile["model_reasoning_effort"] = effort
@@ -291,6 +300,7 @@ def main(argv: list[str]) -> int:
         inherit_native_config=inherit_native_config,
         litellm_base_url=litellm_base_url,
         analytics_mcp_url=analytics_mcp_url,
+        compression_mode=compression_mode,
     )
     (managed_home / "config.toml").write_text(
         render_toml(base_config, header=TOML_HEADER),

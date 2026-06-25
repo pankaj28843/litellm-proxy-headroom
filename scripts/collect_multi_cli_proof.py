@@ -16,6 +16,7 @@ TOKEN_FIELDS = (
 SUPPORT_STATUSES = {
     "supported_useful",
     "route_supported_cache_unproven",
+    "route_supported_not_useful",
     "route_gated",
     "isolation_only",
     "unsupported",

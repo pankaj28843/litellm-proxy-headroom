@@ -12,7 +12,7 @@ Every supported or route-tested CLI proof must record:
 |---|---|
 | `cli` | Stable CLI label such as `codex`, `claude`, `opencode`, `copilot`, or `pi`. |
 | `wrapper` | Repo wrapper path and managed home, such as `bin/opencode-litellm` and `~/.opencode-headroom`. |
-| `support_status` | `supported_useful`, `route_supported_cache_unproven`, `route_gated`, `isolation_only`, or `unsupported`. |
+| `support_status` | `supported_useful`, `route_supported_cache_unproven`, `route_supported_not_useful`, `route_gated`, `isolation_only`, or `unsupported`. |
 | `marker` | `LITELLM_PROXY_RUN_MARKER` or an explicit time-window fallback when the CLI cannot carry a marker. |
 | `compression_mode` | `on`, `off`, `mixed`, `unknown`, or `not_applicable`. Use `off` only for explicit compression-disabled baselines that still route through LiteLLM and record provider rows. |
 | `model_scope` | Smoke model, practical model, and any helper/small-model calls observed. |
@@ -38,7 +38,7 @@ Every supported or route-tested CLI proof must record:
 | Claude Code | `route_gated` | Real `gpt-5.4-mini` Claude Code smoke reached LiteLLM and analytics MCP. The wrapper now carries marker/client/project headers through `ANTHROPIC_CUSTOM_HEADERS`, but the route still fails with `System messages are not allowed` on the current ChatGPT-backed model group. |
 | OpenCode | `route_supported_cache_unproven` | Real `opencode run --format json` smoke and practical `gpt-5.5` series routed through LiteLLM with marker-correlated provider rows. Practical aggregate had input `51648`, cached input absent, output `674`, reasoning `314`, total `52322`, cost unavailable. |
 | GitHub Copilot CLI | `route_supported_cache_unproven` | After upgrading Copilot CLI from `1.0.7` to `1.0.64`, `bin/copilot-litellm` uses the documented local BYOK provider env vars to route through LiteLLM. Real smoke and practical series reached `/v1/responses`, but cached input is absent and cost is unavailable. |
-| Pi coding agent | `route_supported_cache_unproven` | After upgrading Pi from `0.75.0` to `0.80.2`, `bin/pi-litellm` uses managed `~/.pi-headroom` plus custom `models.json` provider routing to LiteLLM. Real smoke and practical series reached `/v1/responses`; provider cache was observed, but usefulness remains unproven without direct-vs-proxy comparison and cost is unavailable. |
+| Pi coding agent | `route_supported_not_useful` | After rebuilding LiteLLM with compression-mode support, matching real Pi `gpt-5.5` practical series compared normal `agent-90` against compression-off. Normal compression was worse by `27327` total provider tokens, `35044.40` billing-equivalent input tokens, and `-0.159897` cache-ratio delta; observed cost remains unavailable. |
 
 ## Compression-Off Baselines
 
@@ -76,6 +76,7 @@ current support labels.
 | OpenCode | `route_supported_cache_unproven` | `tmp/multi-cli-proof/opencode-practical-20260624T1950/proof.json` normalizes the real `gpt-5.5` OpenCode series and DB rows; cached input is `absent` and cost is `unavailable`. |
 | GitHub Copilot CLI | `route_supported_cache_unproven` | `tmp/copilot-route-proof/copilot-practical-20260624T182754Z/proof.json` normalizes three real `gpt-5.5` Copilot CLI BYOK runs after upgrade to `1.0.64`; aggregate input `265448`, cached input `absent`, output `1848`, reasoning `142`, total `267296`, cost `unavailable`. Smoke artifact: `tmp/copilot-route-proof/copilot-smoke-20260624T182552Z/proof.json`. |
 | Pi coding agent | `route_supported_cache_unproven` | `tmp/pi-route-proof/pi-practical-20260625T002659Z/proof.json` normalizes three real `gpt-5.5` Pi CLI runs after upgrade to `0.80.2`; aggregate input `93352`, cached input `9216`, cache ratio `0.098723`, output `296`, reasoning `67`, total `93648`, cost `unavailable`. Smoke artifact: `tmp/pi-route-proof/pi-smoke-20260625T002534Z/proof.json`. |
+| Pi coding agent | `route_supported_not_useful` | `tmp/pi-route-proof/pi-compression-comparison-20260625T012648Z.json` compares valid same-deploy Pi practical series: normal marker `pi-compression-on-20260625T012648Z` versus compression-off marker `pi-compression-off-20260625T012150Z`. Normal `agent-90` aggregate: input `99831`, cached `9216`, total `101161`, cache ratio `0.092316`. Compression-off aggregate: input `73081`, cached `18432`, total `73834`, cache ratio `0.252213`. Cost unavailable. Invalid pre-rebuild artifact `tmp/pi-route-proof/pi-compression-off-20260625T011758Z/invalid-old-callback.txt` is excluded. |
 
 ## Query Shape
 

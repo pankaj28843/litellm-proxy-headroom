@@ -128,22 +128,30 @@ def model_entry(model: str) -> dict[str, object]:
     }
 
 
-def models_config(model: str, small_model: str, *, base_url: str) -> dict[str, object]:
+def models_config(
+    model: str,
+    small_model: str,
+    *,
+    base_url: str,
+    compression_mode: str | None,
+) -> dict[str, object]:
     models = [model_entry(model)]
     if small_model != model:
         models.append(model_entry(small_model))
+    headers = {
+        "X-LiteLLM-Proxy-Client": "$PI_LITELLM_CLIENT",
+        "X-LiteLLM-Proxy-Project": "$PI_LITELLM_PROJECT",
+        "X-LiteLLM-Proxy-Run": "$LITELLM_PROXY_RUN_MARKER",
+    }
+    if compression_mode:
+        headers["X-LiteLLM-Proxy-Compression"] = "$PI_LITELLM_COMPRESSION_MODE"
     return {
         "providers": {
             PROVIDER_ID: {
                 "baseUrl": base_url,
                 "api": os.environ.get("PI_LITELLM_API", "openai-responses"),
                 "apiKey": "$LITELLM_MASTER_KEY",
-                "headers": {
-                    "X-LiteLLM-Proxy-Client": "$PI_LITELLM_CLIENT",
-                    "X-LiteLLM-Proxy-Project": "$PI_LITELLM_PROJECT",
-                    "X-LiteLLM-Proxy-Run": "$LITELLM_PROXY_RUN_MARKER",
-                    "X-LiteLLM-Proxy-Compression": "$PI_LITELLM_COMPRESSION_MODE",
-                },
+                "headers": headers,
                 "models": models,
             }
         }
@@ -226,7 +234,12 @@ def main(argv: list[str]) -> int:
     home.mkdir(parents=True, exist_ok=True)
     write_config(
         home / "models.json",
-        models_config(model, small_model, base_url=litellm_base_url),
+        models_config(
+            model,
+            small_model,
+            base_url=litellm_base_url,
+            compression_mode=compression_mode,
+        ),
     )
 
     os.environ["PI_CODING_AGENT_DIR"] = str(home)

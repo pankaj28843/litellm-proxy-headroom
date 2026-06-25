@@ -884,6 +884,12 @@ def test_opencode_wrapper_respects_existing_model_argument(tmp_path: Path) -> No
         "health marker",
     ]
 
+    config = json.loads((managed_home / "opencode.json").read_text())
+    assert (
+        "X-LiteLLM-Proxy-Compression"
+        not in config["provider"]["litellm"]["options"]["headers"]
+    )
+
 
 def test_opencode_wrapper_does_not_add_model_to_management_commands(
     tmp_path: Path,
@@ -1036,6 +1042,11 @@ def test_pi_wrapper_respects_existing_model_argument(tmp_path: Path) -> None:
         "-p",
         "health marker",
     ]
+
+    config = json.loads((managed_home / "models.json").read_text())
+    assert (
+        "X-LiteLLM-Proxy-Compression" not in config["providers"]["litellm"]["headers"]
+    )
 
 
 def test_pi_wrapper_does_not_add_model_to_management_commands(

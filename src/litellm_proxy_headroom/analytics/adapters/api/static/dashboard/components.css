@@ -1,0 +1,245 @@
+.filter-panel {
+  margin-bottom: 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.filter-panel summary {
+  display: grid;
+  grid-template-columns: minmax(12rem, 0.35fr) minmax(0, 1fr);
+  gap: 0.75rem;
+  align-items: center;
+  min-height: 3.2rem;
+  padding: 0.7rem 0.85rem;
+  cursor: pointer;
+}
+
+.filter-summary-main,
+.filter-chip-row {
+  min-width: 0;
+}
+
+.filter-summary-main {
+  display: grid;
+  gap: 0.1rem;
+}
+
+.filter-summary-main strong {
+  font-size: 0.9rem;
+}
+
+.filter-summary-main span,
+.filter-chip-row {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.filter-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.35rem;
+}
+
+.filter-chip {
+  max-width: min(18rem, 100%);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--neutral-bg);
+  padding: 0.18rem 0.5rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.filter-bar {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(9.5rem, 1fr));
+  gap: 0.65rem;
+  padding: 0.85rem;
+  border-top: 1px solid var(--border);
+}
+
+.filter-bar label {
+  display: grid;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+.filter-bar label span {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.filter-bar input,
+.filter-bar select {
+  width: 100%;
+  min-height: 2.35rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--text);
+  padding: 0.4rem 0.55rem;
+}
+
+.toggle-control {
+  align-items: end;
+  grid-template-columns: auto 1fr;
+  column-gap: 0.45rem;
+}
+
+.toggle-control input[type="checkbox"] {
+  width: 1rem;
+  min-height: 1rem;
+  align-self: center;
+}
+
+.filter-actions {
+  display: flex;
+  align-items: end;
+  gap: 0.5rem;
+}
+
+button,
+.button-link,
+.status-action {
+  display: inline-flex;
+  min-height: 2.35rem;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #145bb9;
+  border-radius: 6px;
+  background: #1663d7;
+  color: #fff;
+  padding: 0.45rem 0.75rem;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.button-link {
+  border-color: var(--border);
+  background: var(--surface-strong);
+  color: var(--text);
+}
+
+.status-action {
+  min-height: 1.8rem;
+  border-color: var(--border);
+  background: var(--surface);
+  color: var(--text);
+  padding: 0.25rem 0.55rem;
+  font-size: 0.82rem;
+}
+
+.status-pill,
+.request-indicator {
+  display: inline-flex;
+  min-height: 1.8rem;
+  align-items: center;
+  border-radius: 999px;
+  padding: 0.25rem 0.55rem;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.status-pill--success {
+  background: var(--success-bg);
+  color: var(--success);
+}
+
+.status-pill--danger {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+.status-pill--info {
+  background: var(--info-bg);
+  color: var(--info);
+}
+
+.status-pill--warning {
+  background: var(--warning-bg);
+  color: var(--warning);
+}
+
+.status-pill--neutral {
+  background: var(--neutral-bg);
+  color: var(--muted);
+}
+
+.request-indicator {
+  visibility: hidden;
+  background: var(--warning-bg);
+  color: var(--warning);
+  opacity: 0;
+  transition: opacity 120ms ease-in;
+}
+
+.htmx-request .request-indicator,
+.request-indicator.htmx-request {
+  visibility: visible;
+  opacity: 1;
+}
+
+.status-dot {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  white-space: nowrap;
+}
+
+.status-dot::before {
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 999px;
+  background: var(--muted);
+  content: "";
+}
+
+.status-dot--success::before {
+  background: var(--success);
+}
+
+.status-dot--danger::before {
+  background: var(--danger);
+}
+
+.status-dot--warning::before {
+  background: var(--warning);
+}
+
+.status-dot--info::before {
+  background: var(--info);
+}
+
+@media (max-width: 1180px) {
+  .filter-bar {
+    grid-template-columns: repeat(3, minmax(9rem, 1fr));
+  }
+}
+
+@media (max-width: 700px) {
+  .filter-panel summary {
+    grid-template-columns: 1fr;
+  }
+
+  .filter-chip-row {
+    justify-content: flex-start;
+  }
+
+  .filter-bar {
+    grid-template-columns: 1fr;
+  }
+
+  .filter-actions {
+    align-items: stretch;
+  }
+
+  button,
+  .button-link {
+    flex: 1;
+  }
+}

@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="htmx-config" content='{"includeIndicatorStyles": false}'>
+    <title>{% block title %}Compression Analytics{% endblock %}</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="{{ url_for('dashboard_static', path='/base.css') }}">
+    <link rel="stylesheet" href="{{ url_for('dashboard_static', path='/layout.css') }}">
+    <link rel="stylesheet" href="{{ url_for('dashboard_static', path='/components.css') }}">
+    <link rel="stylesheet" href="{{ url_for('dashboard_static', path='/dashboard.css') }}">
+    <script src="https://unpkg.com/htmx.org@2.0.4/dist/htmx.min.js" defer></script>
+  </head>
+  <body>
+    {% block body %}{% endblock %}
+  </body>
+</html>

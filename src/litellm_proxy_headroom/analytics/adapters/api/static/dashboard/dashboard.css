@@ -1,0 +1,281 @@
+.metric-card,
+.compact-metric,
+.breakdown-panel,
+.dashboard-band,
+.proof-status,
+.summary-section {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.proof-status,
+.summary-section,
+.dashboard-band {
+  padding: 1rem;
+}
+
+.proof-status {
+  border-left: 4px solid var(--warning);
+}
+
+.proof-status .section-heading {
+  align-items: flex-start;
+  gap: 1rem;
+}
+
+.proof-status .section-heading > div {
+  min-width: 0;
+}
+
+.proof-status .section-heading p {
+  max-width: 58rem;
+}
+
+.metric-card,
+.compact-metric {
+  display: grid;
+  min-height: 8.5rem;
+  align-content: space-between;
+  gap: 0.5rem;
+  padding: 0.9rem;
+}
+
+.metric-card span,
+.compact-metric span {
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.metric-card strong {
+  font-size: 1.75rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.05;
+}
+
+.compact-metric {
+  min-height: 6.8rem;
+}
+
+.compact-metric strong {
+  font-size: 1.25rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.metric-card small,
+.compact-metric small {
+  color: var(--muted);
+}
+
+.metric-card--success,
+.compact-metric--success {
+  border-top: 4px solid var(--success);
+}
+
+.metric-card--danger,
+.compact-metric--danger {
+  border-top: 4px solid var(--danger);
+}
+
+.metric-card--warning,
+.compact-metric--warning {
+  border-top: 4px solid var(--warning);
+}
+
+.metric-card--info,
+.compact-metric--info {
+  border-top: 4px solid var(--info);
+}
+
+.breakdown-panel {
+  min-width: 0;
+  overflow: hidden;
+  padding: 0.85rem;
+}
+
+.breakdown-panel table,
+.responsive-table table {
+  font-size: 0.9rem;
+}
+
+.breakdown-panel th:first-child,
+.responsive-table th:first-child {
+  width: 42%;
+}
+
+.detail-grid dl {
+  display: grid;
+  gap: 0.55rem;
+  margin: 0;
+}
+
+.detail-grid dl div {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0.45rem;
+}
+
+.detail-grid dt {
+  color: var(--muted);
+}
+
+.detail-grid dd {
+  margin: 0;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.responsive-table {
+  overflow-x: auto;
+}
+
+.responsive-table th span {
+  display: block;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 500;
+}
+
+.simulation-list {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.simulation-row {
+  display: grid;
+  gap: 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.8rem;
+}
+
+.simulation-row strong,
+.simulation-row span {
+  display: block;
+}
+
+.simulation-row span {
+  overflow-wrap: anywhere;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.simulation-row dl {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.6rem;
+  margin: 0;
+}
+
+.simulation-row dt {
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.simulation-row dd {
+  margin: 0;
+  font-weight: 700;
+}
+
+.empty-state,
+.empty-inline {
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  background: var(--neutral-bg);
+  color: var(--muted);
+  padding: 0.85rem;
+}
+
+.empty-state {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.empty-state strong {
+  color: var(--text);
+}
+
+@media (max-width: 700px) {
+  .metric-card,
+  .compact-metric {
+    min-height: 6.5rem;
+  }
+
+  .responsive-table {
+    overflow-x: visible;
+  }
+
+  .responsive-table table,
+  .responsive-table thead,
+  .responsive-table tbody,
+  .responsive-table tr,
+  .responsive-table th,
+  .responsive-table td {
+    display: block;
+  }
+
+  .responsive-table thead {
+    display: none;
+  }
+
+  .responsive-table tbody {
+    display: grid;
+    gap: 0.7rem;
+  }
+
+  .responsive-table tr {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 0.65rem;
+  }
+
+  .responsive-table tbody th[scope="row"],
+  .responsive-table td {
+    display: grid;
+    grid-template-columns: minmax(4.5rem, 0.38fr) minmax(0, 1fr);
+    gap: 0.75rem;
+    border-bottom: 1px solid var(--border);
+    padding: 0.45rem 0;
+  }
+
+  .responsive-table tbody th[scope="row"] {
+    width: auto;
+  }
+
+  .responsive-table tr > :last-child {
+    border-bottom: 0;
+  }
+
+  .responsive-table tbody th[scope="row"]::before,
+  .responsive-table td::before {
+    color: var(--muted);
+    content: attr(data-label);
+    font-size: 0.75rem;
+    font-weight: 700;
+  }
+
+  .responsive-table tbody th[scope="row"] a,
+  .responsive-table td {
+    overflow-wrap: anywhere;
+  }
+
+  .simulation-row dl {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .detail-grid dl div {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  .detail-grid dd {
+    text-align: left;
+  }
+}

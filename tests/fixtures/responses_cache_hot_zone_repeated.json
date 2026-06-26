@@ -1,0 +1,102 @@
+{
+  "first": {
+    "model": "gpt-5.5",
+    "prompt_cache_key": "redacted-cache-key",
+    "instructions": "[redacted stable developer instructions]",
+    "tools": [
+      {
+        "type": "function",
+        "name": "shell",
+        "description": "Run a read-only shell command.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "cmd": {
+              "type": "string",
+              "description": "Command to execute."
+            }
+          },
+          "required": ["cmd"],
+          "additionalProperties": false
+        }
+      }
+    ],
+    "input": [
+      {
+        "type": "message",
+        "role": "user",
+        "content": [
+          {
+            "type": "input_text",
+            "text": "[redacted repeated user task]"
+          }
+        ]
+      },
+      {
+        "type": "function_call",
+        "name": "shell",
+        "call_id": "call_shell",
+        "arguments": "{\"cmd\":\"python3 scripts/smoke.py\"}"
+      },
+      {
+        "type": "function_call_output",
+        "call_id": "call_shell",
+        "output": "[redacted live tool output from first run]"
+      }
+    ],
+    "metadata": {
+      "request_id": "cache-hot-zone-first",
+      "litellm_proxy_run_marker": "first-marker"
+    }
+  },
+  "second": {
+    "model": "gpt-5.5",
+    "prompt_cache_key": "redacted-cache-key",
+    "instructions": "[redacted stable developer instructions]",
+    "tools": [
+      {
+        "type": "function",
+        "name": "shell",
+        "description": "Run a read-only shell command.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "cmd": {
+              "type": "string",
+              "description": "Command to execute."
+            }
+          },
+          "required": ["cmd"],
+          "additionalProperties": false
+        }
+      }
+    ],
+    "input": [
+      {
+        "type": "message",
+        "role": "user",
+        "content": [
+          {
+            "type": "input_text",
+            "text": "[redacted repeated user task]"
+          }
+        ]
+      },
+      {
+        "type": "function_call",
+        "name": "shell",
+        "call_id": "call_shell",
+        "arguments": "{\"cmd\":\"python3 scripts/smoke.py\"}"
+      },
+      {
+        "type": "function_call_output",
+        "call_id": "call_shell",
+        "output": "[redacted live tool output from second run with different bytes]"
+      }
+    ],
+    "metadata": {
+      "request_id": "cache-hot-zone-second",
+      "litellm_proxy_run_marker": "second-marker"
+    }
+  }
+}

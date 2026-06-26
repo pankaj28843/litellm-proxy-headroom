@@ -1,0 +1,150 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import os
+import sys
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+SRC_ROOT = REPO_ROOT / "src"
+if SRC_ROOT.exists():
+    sys.path.insert(0, str(SRC_ROOT))
+
+from litellm_proxy_headroom.agent_cli.managed_home import (  # noqa: E402
+    default_home_path,
+    find_real_executable,
+    load_dotenv,
+    normalize_base_url,
+)
+
+MANAGED_HOME_NAME = ".copilot-headroom"
+DEFAULT_MODEL = "gpt-5.5"
+
+
+def die(message: str, code: int = 1) -> None:
+    print(f"copilot-litellm: {message}", file=sys.stderr)
+    raise SystemExit(code)
+
+
+def default_managed_home() -> Path:
+    return default_home_path(
+        MANAGED_HOME_NAME,
+        fallback=REPO_ROOT / "tmp" / "copilot-headroom-home",
+    )
+
+
+def default_native_home() -> Path:
+    return default_home_path(
+        ".copilot",
+        fallback=REPO_ROOT / "tmp" / "missing-native-copilot-home",
+    )
+
+
+def managed_home() -> Path:
+    raw = os.environ.get("COPILOT_LITELLM_HOME")
+    if raw:
+        return Path(raw).expanduser()
+    return default_managed_home()
+
+
+def config_dir_arg(argv: list[str]) -> str | None:
+    expect_value = False
+    for arg in argv:
+        if expect_value:
+            return arg
+        if arg == "--config-dir":
+            expect_value = True
+            continue
+        if arg.startswith("--config-dir="):
+            return arg.split("=", 1)[1]
+    if expect_value:
+        die("--config-dir requires a value.")
+    return None
+
+
+def needs_provider_key(argv: list[str]) -> bool:
+    return not any(
+        arg in {"-h", "--help", "help", "-v", "--version", "version", "update"}
+        for arg in argv
+    )
+
+
+def real_copilot() -> str:
+    try:
+        return find_real_executable(
+            binary_name="copilot",
+            wrapper_path=Path(__file__),
+        )
+    except FileNotFoundError:
+        die(
+            "could not find a copilot binary on PATH other than this wrapper.", code=127
+        )
+
+
+def main(argv: list[str]) -> int:
+    load_dotenv(REPO_ROOT / ".env")
+
+    try:
+        litellm_base_url = normalize_base_url(
+            os.environ.get("COPILOT_LITELLM_BASE_URL", "http://127.0.0.1:4000"),
+            env_name="COPILOT_LITELLM_BASE_URL",
+            suffix="/v1",
+        )
+    except ValueError as exc:
+        die(str(exc))
+
+    litellm_master_key = os.environ.get("LITELLM_MASTER_KEY")
+    if litellm_master_key:
+        os.environ["COPILOT_PROVIDER_BEARER_TOKEN"] = litellm_master_key
+    elif needs_provider_key(argv):
+        die(
+            f"LITELLM_MASTER_KEY is not set; add it to {REPO_ROOT / '.env'} or the environment."
+        )
+
+    home = managed_home()
+    native_home = Path(
+        os.environ.get("COPILOT_LITELLM_NATIVE_HOME", default_native_home())
+    ).expanduser()
+    explicit_config_dir = config_dir_arg(argv)
+    config_home = (
+        Path(explicit_config_dir).expanduser() if explicit_config_dir else home
+    )
+
+    if (
+        config_home.resolve(strict=False) == native_home.resolve(strict=False)
+        and os.environ.get("COPILOT_LITELLM_ALLOW_NATIVE_CONFIG") != "1"
+    ):
+        die(
+            "refusing to use native ~/.copilot as the managed config directory; "
+            "set COPILOT_LITELLM_HOME to an isolated path or "
+            "COPILOT_LITELLM_ALLOW_NATIVE_CONFIG=1 for deliberate debugging."
+        )
+
+    config_home.mkdir(parents=True, exist_ok=True)
+    os.environ["COPILOT_HOME"] = str(config_home)
+    os.environ.setdefault("COPILOT_AUTO_UPDATE", "false")
+    os.environ["COPILOT_PROVIDER_BASE_URL"] = litellm_base_url
+    os.environ["COPILOT_PROVIDER_TYPE"] = os.environ.get(
+        "COPILOT_LITELLM_PROVIDER_TYPE", "openai"
+    )
+    os.environ["COPILOT_PROVIDER_WIRE_API"] = os.environ.get(
+        "COPILOT_LITELLM_WIRE_API", "responses"
+    )
+    os.environ["COPILOT_PROVIDER_TRANSPORT"] = os.environ.get(
+        "COPILOT_LITELLM_TRANSPORT", "http"
+    )
+
+    model = os.environ.get("COPILOT_LITELLM_MODEL", DEFAULT_MODEL)
+    provider_model_id = os.environ.get("COPILOT_LITELLM_PROVIDER_MODEL_ID", model)
+    provider_wire_model = os.environ.get("COPILOT_LITELLM_WIRE_MODEL", model)
+    os.environ["COPILOT_MODEL"] = model
+    os.environ["COPILOT_PROVIDER_MODEL_ID"] = provider_model_id
+    os.environ["COPILOT_PROVIDER_WIRE_MODEL"] = provider_wire_model
+
+    executable = real_copilot()
+    os.execvpe(executable, [executable, *argv], os.environ.copy())
+    return 127
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))

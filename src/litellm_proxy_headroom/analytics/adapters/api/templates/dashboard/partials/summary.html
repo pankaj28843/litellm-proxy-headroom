@@ -1,0 +1,27 @@
+<section class="summary-section" aria-labelledby="summary-heading">
+  <div class="section-heading">
+    <h2 id="summary-heading">Current Diagnostics</h2>
+    <p>{{ stats.executions|integer }} executions from {{ stats.requests|integer }} requests</p>
+  </div>
+
+  {% if not has_data %}
+  <div class="empty-state">
+    <strong>No persisted compression executions match these filters.</strong>
+    {% if query.filters.data_scope == 'test' %}
+    <span>Run the analytics smoke seed or widen the date range to populate this view.</span>
+    {% else %}
+    <span>Select test/demo data only when validating fixtures, or widen the date range.</span>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  <div class="metric-grid">
+    {% for metric in summary_metrics %}
+    <article class="metric-card metric-card--{{ metric.tone }}">
+      <span>{{ metric.label }}</span>
+      <strong>{{ metric.value }}</strong>
+      <small>{{ metric.detail }}</small>
+    </article>
+    {% endfor %}
+  </div>
+</section>

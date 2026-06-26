@@ -1,0 +1,63 @@
+{
+  "hook": "async_pre_call_hook",
+  "call_type": "aresponses",
+  "route_type": "aresponses",
+  "top_level_keys": [
+    "input",
+    "instructions",
+    "litellm_call_id",
+    "litellm_logging_obj",
+    "metadata",
+    "model",
+    "tools"
+  ],
+  "field_types": {
+    "input": "list",
+    "instructions": "str",
+    "metadata": "dict",
+    "model": "str",
+    "tools": "list"
+  },
+  "input_item_shapes": [
+    {
+      "type": "message",
+      "role": "user",
+      "content_part_types": [
+        "input_text"
+      ]
+    },
+    {
+      "type": "function_call",
+      "keys": [
+        "arguments",
+        "call_id",
+        "name",
+        "type"
+      ]
+    },
+    {
+      "type": "function_call_output",
+      "output_type": "str"
+    },
+    {
+      "type": "reasoning",
+      "keys": [
+        "summary",
+        "type"
+      ]
+    }
+  ],
+  "provider_usage_shape": {
+    "id_present": true,
+    "usage_keys": [
+      "input_tokens",
+      "input_tokens_details",
+      "output_tokens",
+      "total_tokens"
+    ],
+    "cache_detail_keys": [
+      "cached_tokens"
+    ]
+  },
+  "content_policy": "keys-types-and-counts-only"
+}

@@ -1,0 +1,1 @@
+"""LiteLLM analytics callback adapter."""

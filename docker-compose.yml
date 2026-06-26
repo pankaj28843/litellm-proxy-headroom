@@ -1,4 +1,56 @@
 services:
+  analytics-db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${ANALYTICS_POSTGRES_DB:-analytics}
+      POSTGRES_USER: ${ANALYTICS_POSTGRES_USER:-analytics}
+      POSTGRES_PASSWORD: ${ANALYTICS_POSTGRES_PASSWORD:-analytics}
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${ANALYTICS_POSTGRES_USER:-analytics} -d ${ANALYTICS_POSTGRES_DB:-analytics}",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    ports:
+      - "127.0.0.1:${ANALYTICS_POSTGRES_PORT:-55432}:5432"
+    volumes:
+      - analytics_pgdata:/var/lib/postgresql/data
+
+  analytics-backend:
+    build:
+      context: .
+    restart: unless-stopped
+    depends_on:
+      analytics-db:
+        condition: service_healthy
+      phoenix:
+        condition: service_started
+    command:
+      - uvicorn
+      - litellm_proxy_headroom.analytics.adapters.api.app:create_app
+      - --factory
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8010"
+    environment:
+      ANALYTICS_DATABASE_URL: postgresql+asyncpg://${ANALYTICS_POSTGRES_USER:-analytics}:${ANALYTICS_POSTGRES_PASSWORD:-analytics}@analytics-db:5432/${ANALYTICS_POSTGRES_DB:-analytics}
+      OTEL_SERVICE_NAME: litellm-analytics-backend
+      OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: http://phoenix:6006/v1/traces
+      OTEL_SPAN_ATTRIBUTE_COUNT_LIMIT: "512"
+      PHOENIX_PROJECT_NAME: ${PHOENIX_PROJECT_NAME:-litellm-proxy-headroom}
+      ANALYTICS_CACHED_INPUT_COST_MULTIPLIER: ${ANALYTICS_CACHED_INPUT_COST_MULTIPLIER:-0.10}
+      HEADROOM_ANALYTICS_OTEL_ENABLED: "true"
+      HEADROOM_ANALYTICS_OTEL_CONSOLE: ${HEADROOM_ANALYTICS_OTEL_CONSOLE:-false}
+      HEADROOM_ANALYTICS_OTEL_METRIC_EXPORT_INTERVAL_MS: ${HEADROOM_ANALYTICS_OTEL_METRIC_EXPORT_INTERVAL_MS:-60000}
+      LITELLM_PROXY_ANALYTICS_OTEL_EXCLUDED_URLS: ${LITELLM_PROXY_ANALYTICS_OTEL_EXCLUDED_URLS-}
+    ports:
+      - "127.0.0.1:${ANALYTICS_BACKEND_PORT:-8010}:8010"
+
   phoenix-db:
     image: postgres:16-alpine
     restart: unless-stopped
@@ -47,6 +99,8 @@ services:
       - --port
       - "4000"
     depends_on:
+      analytics-backend:
+        condition: service_started
       phoenix:
         condition: service_started
     environment:
@@ -54,63 +108,41 @@ services:
       CONFIG_FILE_PATH: /app/config/litellm.yaml
       CHATGPT_TOKEN_DIR: /data/chatgpt
       CHATGPT_AUTH_FILE: ${CHATGPT_AUTH_FILE:-auth.json}
+      CHATGPT_DEFAULT_INSTRUCTIONS: ${CHATGPT_DEFAULT_INSTRUCTIONS:- }
       LITELLM_OTEL_V2: "true"
       OTEL_SERVICE_NAME: litellm-proxy
       OTEL_EXPORTER: otlp_http
       OTEL_ENDPOINT: http://phoenix:6006/v1/traces
+      OTEL_SPAN_ATTRIBUTE_COUNT_LIMIT: "512"
       PHOENIX_COLLECTOR_HTTP_ENDPOINT: http://phoenix:6006/v1/traces
       PHOENIX_COLLECTOR_ENDPOINT: http://phoenix:6006/v1/traces
       PHOENIX_PROJECT_NAME: ${PHOENIX_PROJECT_NAME:-litellm-proxy-headroom}
       OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT: no_content
+      HEADROOM_ANALYTICS_URL: http://analytics-backend:8010
+      HEADROOM_ANALYTICS_TIMEOUT_SECONDS: "0.75"
+      HEADROOM_ANALYTICS_BUFFER_SIZE: "1000"
+      HEADROOM_ANALYTICS_BUFFER_WORKERS: "2"
+      HEADROOM_ANALYTICS_MAX_ATTEMPTS: "3"
+      HEADROOM_ANALYTICS_RETRY_BASE_SECONDS: "0.1"
+      HEADROOM_ANALYTICS_RETRY_MAX_SECONDS: "1.0"
+      HEADROOM_ANALYTICS_SHUTDOWN_TIMEOUT_SECONDS: "2.0"
+      HEADROOM_CCR_BACKEND: analytics-postgres
+      HEADROOM_CCR_ANALYTICS_TIMEOUT_SECONDS: "0.75"
+      HEADROOM_SAVINGS_PROFILE: ${HEADROOM_SAVINGS_PROFILE:-agent-90}
+      HEADROOM_RESPONSES_MUTABLE_OUTPUT_COMPRESSION: ${HEADROOM_RESPONSES_MUTABLE_OUTPUT_COMPRESSION:-false}
     expose:
       - "4000"
-    volumes:
-      - ./config:/app/config:ro
-      - ./data/chatgpt:/data/chatgpt
-      - ./data/headroom:/data/headroom
-
-  headroom:
-    build:
-      context: .
-    restart: unless-stopped
-    depends_on:
-      litellm:
-        condition: service_started
-    environment:
-      HEADROOM_WORKSPACE_DIR: /data/headroom
-      OPENAI_TARGET_API_URL: http://litellm:4000
-      HEADROOM_TELEMETRY: "off"
     ports:
       - "127.0.0.1:4000:4000"
     volumes:
-      - ./data/headroom:/data/headroom
-
-  headroom-mcp:
-    build:
-      context: .
-    profiles:
-      - mcp
-    depends_on:
-      headroom:
-        condition: service_started
-    environment:
-      HEADROOM_WORKSPACE_DIR: /data/headroom
-    command:
-      - headroom
-      - mcp
-      - serve
-      - --proxy-url
-      - http://headroom:4000
-    stdin_open: true
-    tty: false
-    volumes:
-      - ./data/headroom:/data/headroom
+      - ./config:/app/config:ro
+      - ./data/chatgpt:/data/chatgpt
 
   open-webui:
     image: ghcr.io/open-webui/open-webui:main
     restart: unless-stopped
     depends_on:
-      headroom:
+      litellm:
         condition: service_started
       phoenix:
         condition: service_started
@@ -123,21 +155,16 @@ services:
       DEFAULT_USER_ROLE: pending
       SAFE_MODE: "true"
       LOG_FORMAT: json
-      OPENAI_API_BASE_URL: http://headroom:4000/v1
+      OPENAI_API_BASE_URL: http://litellm:4000/v1
       OPENAI_API_KEY: ${LITELLM_MASTER_KEY:?set LITELLM_MASTER_KEY in .env}
       ENABLE_FORWARD_USER_INFO_HEADERS: "true"
-      ENABLE_OTEL: "true"
-      ENABLE_OTEL_TRACES: "true"
-      ENABLE_OTEL_METRICS: "false"
-      ENABLE_OTEL_LOGS: "false"
-      OTEL_EXPORTER_OTLP_ENDPOINT: http://phoenix:4317
-      OTEL_EXPORTER_OTLP_INSECURE: "true"
-      OTEL_SERVICE_NAME: open-webui
+      ENABLE_OTEL: "false"
     ports:
       - "127.0.0.1:8080:8080"
     volumes:
       - openwebui_data:/app/backend/data
 
 volumes:
+  analytics_pgdata:
   phoenix_pgdata:
   openwebui_data:

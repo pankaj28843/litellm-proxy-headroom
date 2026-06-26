@@ -116,8 +116,8 @@ Expected evidence:
   they do not prove compression usefulness. Use the Codex CLI A/B harness for
   usefulness claims.
 - CCR smoke prints `headroom_ccr_smoke=ok` with a hash, marker, and retrieval
-  count. This proves the Headroom library `CompressionStoreBackend`
-  compatibility path, not a Headroom container.
+  count. This proves the Headroom library `CompressionStoreBackend` adapter
+  path, not a Headroom container.
 - LiteLLM buffer smoke prints `litellm_buffer_smoke=ok` with submitted and
   delivered counts.
 - MCP/OTel smoke prints `mcp_otel_smoke=ok` with a marker, CCR hash, MCP
@@ -181,7 +181,7 @@ curl -fsS 'http://127.0.0.1:8010/dashboard?preset=all&provider=dashboard-provide
 Expected evidence:
 
 - The dashboard HTML contains the compact filter panel, active filter chips,
-  primary usefulness status, Current Impact, Tokens saved, Recent Records,
+  primary usefulness status, Current Diagnostics, Local token delta, Recent Records,
   Simulation Replay, and a Pause/Resume action.
 - Seeded dashboard smoke rows appear only when `data_scope=test` or
   `data_scope=all` is selected. The default `data_scope=real` view must not use
@@ -302,9 +302,10 @@ Interpretation rules:
 - Provider cache hit comes from provider-reported `cached_input_tokens` divided
   by provider-reported input tokens. Billing-equivalent input uses
   `provider_uncached_input + provider_cached_input * ANALYTICS_CACHED_INPUT_COST_MULTIPLIER`
-  and defaults the multiplier to `0.10`. Treat the multiplier as pricing config:
-  it matches current OpenAI GPT-5.x text cached-input ratios as of 2026-06-23,
-  but evidence should record the configured value for the run.
+  and defaults the multiplier to `0.10`. Treat the result as a one-sided
+  billing-input diagnostic, not a savings or capacity claim. The multiplier
+  matches current OpenAI GPT-5.x text cached-input ratios as of 2026-06-23, but
+  evidence should record the configured value for the run.
 - `negative_savings_executions` means `tokens_saved < 0`; it is a risk signal,
   not a failure status.
 - Dashboard cost fields compare measured `provider_calls.cost_total` with
@@ -368,7 +369,9 @@ the `litellm-proxy-headroom` project rather than only in `default`.
 
 Current evidence expectations:
 
-- LiteLLM/Open WebUI traces arrive through the existing OTel configuration.
+- LiteLLM traces arrive through the existing OTel configuration.
+- Open WebUI does not export OTel traces by default; its health checks and
+  sqlite connection spans are treated as Phoenix noise.
 - Content capture remains disabled by default.
 - Analytics backend traces arrive through the configured OTel exporter when
   backend OTel is enabled.

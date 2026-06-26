@@ -32,9 +32,9 @@ class DashboardFilterChip:
 
 
 BREAKDOWN_GROUPS: tuple[DashboardBreakdownGroup, ...] = (
-    DashboardBreakdownGroup("provider", "Providers", "Savings by provider"),
-    DashboardBreakdownGroup("model", "Models", "Savings by model"),
-    DashboardBreakdownGroup("strategy", "Strategies", "Savings by strategy"),
+    DashboardBreakdownGroup("provider", "Providers", "Local token delta by provider"),
+    DashboardBreakdownGroup("model", "Models", "Local token delta by model"),
+    DashboardBreakdownGroup("strategy", "Strategies", "Local token delta by strategy"),
     DashboardBreakdownGroup("status", "Statuses", "Execution health"),
 )
 
@@ -74,19 +74,15 @@ def build_dashboard_context(
 def _summary_metrics(stats: DashboardStats) -> list[DashboardMetric]:
     return [
         DashboardMetric(
-            "Combined saving",
-            format_percent(stats.provider_cache.billing_equivalent_savings_percent),
-            f"{format_token_amount(stats.provider_cache.billing_equivalent_input_tokens)} billing-equivalent input",
-            tone=(
-                "success"
-                if (stats.provider_cache.billing_equivalent_savings_percent or 0) >= 50
-                else "warning"
-            ),
+            "Usefulness verdict",
+            _usefulness_value(stats),
+            stats.usefulness.cache_evidence_scope,
+            tone=_usefulness_tone(stats),
         ),
         DashboardMetric(
             "Provider cache hit",
             format_percent(stats.provider_cache.provider_cache_hit_percent),
-            f"{format_int(stats.provider_cache.provider_reported_cached_input_tokens)} cached input tokens",
+            f"{format_int(stats.provider_cache.provider_reported_cached_input_tokens)} provider-reported cached input tokens",
             tone=(
                 "success"
                 if (stats.provider_cache.provider_cache_hit_percent or 0) > 0
@@ -94,21 +90,21 @@ def _summary_metrics(stats: DashboardStats) -> list[DashboardMetric]:
             ),
         ),
         DashboardMetric(
-            "Raw tokens saved",
-            format_int(stats.tokens_saved),
-            f"{format_percent(stats.savings_percent)} saved",
-            tone="success" if stats.tokens_saved >= 0 else "danger",
+            "Local token delta",
+            format_signed_int(stats.tokens_saved),
+            f"{format_percent(stats.savings_percent)} before-vs-after compression",
+            tone="info" if stats.tokens_saved >= 0 else "danger",
         ),
         DashboardMetric(
-            "Estimated dollars",
+            "Cost diagnostic",
             format_money(stats.cost.estimated_cost_savings),
-            "baseline minus measured provider cost",
-            tone=_money_tone(stats.cost.estimated_cost_savings),
+            "estimated baseline minus measured provider cost; not proof",
+            tone="neutral",
         ),
         DashboardMetric(
-            "Billing capacity",
-            format_ratio(stats.provider_cache.billing_equivalent_capacity_multiplier),
-            f"{format_ratio(stats.provider_cache.raw_token_capacity_multiplier)} raw-token capacity",
+            "Billing input estimate",
+            format_token_amount(stats.provider_cache.billing_equivalent_input_tokens),
+            f"{format_percent(stats.provider_cache.billing_equivalent_savings_percent)} one-sided delta vs baseline",
             tone="info",
         ),
         DashboardMetric(
@@ -123,9 +119,9 @@ def _summary_metrics(stats: DashboardStats) -> list[DashboardMetric]:
 def _risk_metrics(stats: DashboardStats) -> list[DashboardMetric]:
     return [
         DashboardMetric(
-            "Negative savings",
+            "Token expansion",
             format_int(stats.negative_savings_executions),
-            "executions expanded token count",
+            "executions expanded local token count",
             tone="danger" if stats.negative_savings_executions else "success",
         ),
         DashboardMetric(
@@ -182,8 +178,8 @@ def _filter_chips(query: DashboardQuery) -> list[DashboardFilterChip]:
     if filters.negative_savings is not None:
         chips.append(
             DashboardFilterChip(
-                "Savings",
-                "Negative only" if filters.negative_savings else "Non-negative",
+                "Token delta",
+                "Expanded only" if filters.negative_savings else "Non-expanding",
             )
         )
     return [chip for chip in chips if chip.value]
@@ -266,6 +262,18 @@ def _money_tone(value: str | None) -> str:
     if amount == 0:
         return "warning"
     return "success"
+
+
+def _usefulness_value(stats: DashboardStats) -> str:
+    return stats.usefulness.status.replace("_", " ").title()
+
+
+def _usefulness_tone(stats: DashboardStats) -> str:
+    if stats.usefulness.status == "useful":
+        return "success"
+    if stats.usefulness.status == "not_useful":
+        return "danger"
+    return "warning"
 
 
 def _decimal(value: str | None) -> Decimal | None:

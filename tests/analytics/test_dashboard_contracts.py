@@ -118,15 +118,19 @@ def test_dashboard_context_contains_template_contract() -> None:
         == "whole Codex turn/provider-call sequence"
     )
     assert [metric.label for metric in context["summary_metrics"]] == [
-        "Combined saving",
+        "Usefulness verdict",
         "Provider cache hit",
-        "Raw tokens saved",
-        "Estimated dollars",
-        "Billing capacity",
+        "Local token delta",
+        "Cost diagnostic",
+        "Billing input estimate",
         "Success rate",
     ]
-    assert context["summary_metrics"][0].value == "62.0%"
+    assert context["summary_metrics"][0].value == "Unproven"
     assert context["summary_metrics"][1].value == "30.0%"
+    assert context["summary_metrics"][2].value == "+500"
+    assert context["summary_metrics"][3].value == "n/a"
+    assert "not proof" in context["summary_metrics"][3].detail
+    assert context["summary_metrics"][4].value == "379.6"
     assert [metric.label for metric in context["activity_metrics"]] == [
         "Retrievals",
         "Cache events",
@@ -139,7 +143,7 @@ def test_dashboard_context_contains_template_contract() -> None:
         ("Data", "Operational"),
         ("Provider", "provider-a"),
         ("Model", "model-a"),
-        ("Savings", "Negative only"),
+        ("Token delta", "Expanded only"),
     ]
 
 
@@ -173,6 +177,13 @@ def test_dashboard_route_preserves_filters_in_template_context(
     assert "Provider: provider-a" in response.text
     assert "Primary usefulness unproven" in response.text
     assert "whole Codex turn/provider-call sequence" in response.text
+    assert "Usefulness verdict" in response.text
+    assert "Local token delta" in response.text
+    assert "Billing input estimate" in response.text
+    assert "Combined saving" not in response.text
+    assert "Raw tokens saved" not in response.text
+    assert "Estimated dollars" not in response.text
+    assert "Billing capacity" not in response.text
     assert 'name="provider" value="provider-a"' in response.text
     assert "Resume" in response.text
     assert 'hx-trigger="every 15s"' not in response.text
@@ -424,9 +435,9 @@ def _stats() -> DashboardStats:
             billing_equivalent_capacity_multiplier=2.634352,
         ),
         cost=CostDashboardStats(
-            measured_provider_cost_total="0.01000000",
-            estimated_baseline_cost_total="0.02000000",
-            estimated_cost_savings="0.01000000",
+            measured_provider_cost_total=None,
+            estimated_baseline_cost_total=None,
+            estimated_cost_savings=None,
             cost_increase_provider_calls=0,
         ),
         cache=CacheDashboardStats(

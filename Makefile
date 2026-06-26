@@ -6,7 +6,7 @@ CHATGPT_AUTH_FILE ?= auth.json
 
 .DEFAULT_GOAL := up
 
-.PHONY: up init env auth-import build down restart logs ps mcp models test e2e analytics-smoke lint format-check check config clean
+.PHONY: up init env auth-import build down restart logs ps mcp models test e2e analytics-smoke codex-session-report codex-session-html codex-session-story lint format-check check config clean
 
 up: init
 	$(COMPOSE) up -d --build
@@ -72,6 +72,27 @@ analytics-smoke:
 	uv run python scripts/e2e_query_stats_smoke.py && \
 	uv run python scripts/e2e_dashboard_stats_smoke.py && \
 	uv run python scripts/e2e_simulation_smoke.py
+
+codex-session-report:
+	uv run python scripts/report_recent_codex_session.py \
+		--client "$${CODEX_SESSION_CLIENT:-codex}" \
+		--hours "$${CODEX_SESSION_HOURS:-1}" \
+		$${CODEX_SESSION_OUT_DIR:+--out-dir "$${CODEX_SESSION_OUT_DIR}"}
+
+codex-session-html:
+	@if [ -z "$${CODEX_SESSION_REPORT_JSON}" ]; then \
+		printf 'set CODEX_SESSION_REPORT_JSON=tmp/.../report.json\n' >&2; \
+		exit 1; \
+	fi
+	uv run python scripts/render_codex_session_html.py "$${CODEX_SESSION_REPORT_JSON}"
+
+codex-session-story:
+	@OUT_DIR="$${CODEX_SESSION_OUT_DIR:-tmp/codex-proxy-session-report/manual}"; \
+	uv run python scripts/report_recent_codex_session.py \
+		--client "$${CODEX_SESSION_CLIENT:-codex}" \
+		--hours "$${CODEX_SESSION_HOURS:-1}" \
+		--out-dir "$${OUT_DIR}" && \
+	uv run python scripts/render_codex_session_html.py "$${OUT_DIR}/report.json"
 
 lint:
 	uv run ruff check .

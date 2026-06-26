@@ -30,8 +30,8 @@ def test_generated_model_list_maps_codex_slugs_to_chatgpt_models() -> None:
                     "supported_in_api": True,
                 },
                 {
-                    "slug": "legacy-hidden",
-                    "display_name": "Legacy Hidden",
+                    "slug": "hidden-model",
+                    "display_name": "Hidden Model",
                     "supported_in_api": False,
                 },
                 {

@@ -60,7 +60,7 @@ async def metrics(session: SessionDep) -> PlainTextResponse:
         "# HELP litellm_proxy_analytics_provider_calls_total Provider calls stored.",
         "# TYPE litellm_proxy_analytics_provider_calls_total counter",
         f"litellm_proxy_analytics_provider_calls_total {snapshot.provider_calls}",
-        "# HELP litellm_proxy_analytics_tokens_saved_total Tokens saved by compression.",
+        "# HELP litellm_proxy_analytics_tokens_saved_total Local before/after compression token delta; not provider-credit savings.",
         "# TYPE litellm_proxy_analytics_tokens_saved_total counter",
         f"litellm_proxy_analytics_tokens_saved_total {snapshot.tokens_saved}",
         "# HELP litellm_proxy_analytics_retrievals_total CCR retrievals recorded.",

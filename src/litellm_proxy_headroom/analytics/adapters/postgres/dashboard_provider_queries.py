@@ -96,7 +96,7 @@ async def provider_cache_stats(
         if provider_input
         else None
     )
-    billing_equivalent_saved = (
+    billing_equivalent_delta = (
         Decimal(baseline_input) - billing_equivalent_input
         if billing_equivalent_input is not None and baseline_input
         else None
@@ -112,10 +112,10 @@ async def provider_cache_stats(
         ),
         cached_input_cost_multiplier=str(cached_multiplier),
         billing_equivalent_input_tokens=_float_decimal(billing_equivalent_input),
-        billing_equivalent_tokens_saved=_float_decimal(billing_equivalent_saved),
+        billing_equivalent_tokens_saved=_float_decimal(billing_equivalent_delta),
         billing_equivalent_savings_percent=(
-            _percent_decimal(billing_equivalent_saved, Decimal(baseline_input))
-            if billing_equivalent_saved is not None and baseline_input
+            _percent_decimal(billing_equivalent_delta, Decimal(baseline_input))
+            if billing_equivalent_delta is not None and baseline_input
             else None
         ),
         raw_token_capacity_multiplier=(
@@ -158,13 +158,13 @@ async def cost_stats(
             *provider_call_conditions(filters),
         )
     )
-    savings = (
+    estimated_delta = (
         estimated - measured if estimated is not None and measured is not None else None
     )
     return CostDashboardStats(
         measured_provider_cost_total=decimal_str(measured),
         estimated_baseline_cost_total=decimal_str(estimated),
-        estimated_cost_savings=decimal_str(savings),
+        estimated_cost_savings=decimal_str(estimated_delta),
         cost_increase_provider_calls=int_value(
             await _cost_increase_provider_calls(session, execution_ids, filters)
         ),

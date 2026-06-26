@@ -17,10 +17,10 @@ Run upstream applications at their documented roots:
 - The custom analytics backend is the localhost analytics surface on port 8010
   for `/dashboard`, `/health`, `/ready`, `/stats`, `/stats/breakdown`,
   `/stats/dashboard`, `/records/compression`, `/simulations/runs`, `/metrics`,
-  storage-backed CCR compatibility endpoints, and `/mcp/`.
+  storage-backed CCR adapter endpoints, and `/mcp/`.
 - Headroom is not a Compose service, CLI, proxy, dashboard, MCP server, or route
   owner. Keep it as an installed library for the LiteLLM callback and
-  `CompressionStoreBackend` compatibility adapter.
+  `CompressionStoreBackend` adapter.
 
 Do not add or run Headroom CLI, `headroom proxy`, Headroom MCP, Headroom
 dashboard, Headroom API service, route aliases to Headroom surfaces, or
@@ -59,25 +59,24 @@ single provider call is not enough to claim usefulness.
 For non-Codex CLIs whose documented surfaces do not expose a comparable direct
 provider lane, use real CLI series with marker-correlated LiteLLM rows and, when
 supported, a per-request compression-off baseline via local
-`X-LiteLLM-Proxy-Compression: off`. That baseline must keep the same LiteLLM
+`X-LLM-Proxy-Compression: off`. That baseline must keep the same LiteLLM
 provider route and only disable Headroom compression transforms; it is a proof
 mode, not an operator-facing service or replacement for direct provider proof
 where direct proof exists.
 
 If a future integration issue appears, exhaust documented configuration,
-Compose topology, and environment variables before adding code. Any unavoidable
-shim must be isolated, tested, and documented with the upstream behavior it is
-bridging.
+Compose topology, and environment variables before adding code. Do not preserve
+old repo-owned behavior through shims or aliases; update the current adapter
+path directly and delete the old path.
 
-## Current LiteLLM Callback Shim
+## Current LiteLLM Callback Adapter
 
-`config/headroom_litellm_callback.py` is intentionally a narrow compatibility
-shim for Headroom v0.27.0. LiteLLM proxy loads the config callback as a class,
-while Headroom's upstream LiteLLM integration is an instance-based
-`CustomLogger`; the shim keeps one lazy instance and delegates the LiteLLM hook
-methods to it.
+`config/headroom_litellm_callback.py` is intentionally a narrow adapter for
+LiteLLM's class callback loading surface. It owns one lazy
+`HeadroomAnalyticsCallback` instance and delegates the LiteLLM hook methods to
+it.
 
-The shim's only behavior change is local compression profile selection. When
+The adapter's only behavior change is local compression profile selection. When
 `HEADROOM_API_KEY` is not set, the callback uses Headroom's built-in
 `agent-90` profile via `CompressConfig(savings_profile="agent-90")`. Do not add
 new environment variables for this profile unless Headroom exposes a documented
@@ -85,14 +84,14 @@ callback configuration surface that needs them.
 
 The default Compose stack intentionally does not run any Headroom service. The
 owned LiteLLM proxy serves `/v1/*`; the analytics backend serves the custom
-dashboard, filtered stats, records, metrics, CCR compatibility, and MCP.
+dashboard, filtered stats, records, metrics, CCR adapter routes, and MCP.
 
 ## Current Analytics Topology
 
 The analytics backend is the ingress for compression activity, CCR storage,
 retrieval accounting, stats, metrics, and dashboard-ready APIs. LiteLLM and
-library compatibility adapters talk to it over bounded HTTP; they do not write
-directly to PostgreSQL.
+library adapters talk to it over bounded HTTP; they do not write directly to
+PostgreSQL.
 
 The current runtime keeps LiteLLM as the public localhost OpenAI-compatible
 endpoint. Compression runs inside the LiteLLM callback path as a library
@@ -107,8 +106,8 @@ from production executions and only link back to source request/execution/chunk
 IDs.
 
 Do not implement a Headroom proxy extension for analytics. The supported
-integration boundary is the callback plus CCR-compatible backend adapter, both
-used as library integrations.
+integration boundary is the callback plus CCR backend adapter, both used as
+library integrations.
 
 ## Analytics Implementation Discipline
 

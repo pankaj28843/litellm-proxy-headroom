@@ -483,7 +483,9 @@ async def main() -> int:
         ):
             return _fail(f"{surface_name}_missing_marker_record")
         if surface_name in {"dashboard_html", "partial_live"} and (
-            "Provider cache hit" not in html or "Combined saving" not in html
+            "Provider cache hit" not in html
+            or "Local token delta" not in html
+            or "Billing input estimate" not in html
         ):
             return _fail(f"{surface_name}_missing_provider_cache_metrics")
         if surface_name in {"dashboard_html", "partial_live"} and (
@@ -508,8 +510,8 @@ async def main() -> int:
         f"failed={data['failed_executions']} retrievals={data['retrievals']} "
         f"provider_delta_after={provider_delta['estimated_after_provider_input_delta']} "
         f"provider_cache_hit={provider_cache['provider_cache_hit_percent']} "
-        f"billing_equivalent_saving={provider_cache['billing_equivalent_savings_percent']} "
-        f"cost_savings={cost['estimated_cost_savings']} "
+        f"billing_input_delta={provider_cache['billing_equivalent_savings_percent']} "
+        f"cost_delta={cost['estimated_cost_savings']} "
         f"min_saved={distribution['min_tokens_saved']} "
         f"max_saved={distribution['max_tokens_saved']} "
         f"records_total={records_data['total']} "

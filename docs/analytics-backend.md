@@ -51,10 +51,15 @@ Open WebUI -> LiteLLM proxy -> compression library callback
                               -> analytics backend
                               -> PostgreSQL
 
-Library CompressionStoreBackend -> analytics backend CCR compatibility endpoints
+Library CompressionStoreBackend -> analytics backend CCR adapter endpoints
 MCP clients                     -> analytics backend /mcp/
 Phoenix                         <- LiteLLM and analytics OTel exporters
 ```
+
+Open WebUI stays on the request path as a client surface, but it does not
+export its own OTel traces in the default Compose stack. Its health checks and
+local sqlite connection spans are operational noise for this repo's Phoenix
+debugging goal.
 
 Core boundaries:
 
@@ -62,8 +67,8 @@ Core boundaries:
   simulation, and ports. No framework or adapter imports.
 - `analytics/application`: commands, services, read models, buffering, and
   simulation schemas.
-- `analytics/adapters`: FastAPI, FastMCP, LiteLLM, CCR compatibility,
-  PostgreSQL, and OpenTelemetry adapters.
+- `analytics/adapters`: FastAPI, FastMCP, LiteLLM, CCR, PostgreSQL, and
+  OpenTelemetry adapters.
 
 ## Configuration
 
@@ -81,14 +86,21 @@ Important local variables:
 | `HEADROOM_ANALYTICS_MAX_ATTEMPTS` | Delivery attempts before an event is counted failed. |
 | `HEADROOM_ANALYTICS_PENDING_LIMIT` | Maximum in-memory LiteLLM request captures waiting for a response callback. |
 | `HEADROOM_CCR_BACKEND` | Imported-library CCR entry point. Use `analytics-postgres`. |
-| `HEADROOM_CCR_ANALYTICS_TIMEOUT_SECONDS` | Timeout for the CCR compatibility HTTP backend. |
+| `HEADROOM_CCR_ANALYTICS_TIMEOUT_SECONDS` | Timeout for the CCR adapter HTTP backend. |
 | `HEADROOM_CCR_LOCAL_CACHE_ENTRIES` | Per-process CCR read-through cache limit. |
 | `HEADROOM_CCR_TENANT_PREFIX` | Optional tenant prefix for CCR backend metadata. |
+| `HEADROOM_RESPONSES_MUTABLE_OUTPUT_COMPRESSION` | Opt-in gate for mutating OpenAI Responses tool-output units. Defaults to `false` because the latest `gpt-5.5` direct-vs-proxy proof was provider-token negative; leave disabled unless a fresh aggregate proof supports it. |
 | `HEADROOM_ANALYTICS_OTEL_ENABLED` | Enables backend tracing and metrics setup. |
 | `HEADROOM_ANALYTICS_OTEL_CONSOLE` | Emits spans/metrics to logs for local proof. |
 | `HEADROOM_ANALYTICS_OTEL_METRIC_EXPORT_INTERVAL_MS` | OTel metric export interval. |
+| `LITELLM_PROXY_ANALYTICS_OTEL_EXCLUDED_URLS` | Optional comma-delimited regex override for analytics FastAPI URL exclusions. The built-in default filters routine health, readiness, liveness, metrics, docs, favicon, dashboard static assets, and dashboard live-poll requests before export to Phoenix. |
 | `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` | Phoenix or collector trace endpoint. |
 | `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT` | Optional metrics collector endpoint. |
+
+The analytics URL exclusion applies only to the repo-owned FastAPI backend. It
+does not mutate LiteLLM's OTel v2 trace tree or suppress LiteLLM infrastructure
+spans such as provider/database/cache hooks; filter those in Phoenix with
+GenAI/span attributes when focusing on LLM calls.
 
 ## Data Flow
 
@@ -115,8 +127,8 @@ are normalized; provider-specific payloads stay in JSONB for later replay.
 
 CCR storage uses the `analytics-postgres` entry point and the supported library
 `CompressionStoreBackend` protocol. The `/headroom/ccr/*` paths are internal
-compatibility endpoints owned by this backend, not operator routes and not a
-Headroom service. They write and read through:
+adapter endpoints owned by this backend, not operator routes and not a Headroom
+service. They write and read through:
 
 ```text
 PUT  /headroom/ccr/{hash}
@@ -154,7 +166,7 @@ Ingest and retrieval:
 - `GET /chunks/{ccr_hash}`
 - `POST /mcp/`
 
-Internal CCR compatibility routes:
+Internal CCR adapter routes:
 
 - `PUT /headroom/ccr/{hash}`
 - `GET /headroom/ccr/{hash}`
@@ -182,7 +194,7 @@ explicit mixed-scope investigation. Large record reads are paginated.
 
 The custom analytics backend owns `/dashboard`. It does not mount, alias, or
 proxy another dashboard. LiteLLM stays on port 4000 and the compression library
-remains an imported callback/CCR compatibility dependency in that request path.
+remains an imported callback/CCR dependency in that request path.
 
 The dashboard implementation is server-rendered:
 
@@ -226,9 +238,9 @@ Read the dashboard numbers as recomputed source-row totals:
 | `original_tokens`, `compressed_tokens`, `tokens_saved` | Sums from `compression_executions`; null measurements become zero in aggregate read models. |
 | Provider token usage | `token_usage_breakdowns` rows with `measurement_source='provider_reported'`, joined through matching provider calls. These fields are independent of compression savings. |
 | Provider cache hit | Provider-reported `cached_input_tokens / input_tokens`. This reflects prompt-cache reuse seen by the upstream provider, not backend cache events. |
-| Billing-equivalent saving | `(estimated_before_input - (provider_uncached_input + provider_cached_input * ANALYTICS_CACHED_INPUT_COST_MULTIPLIER)) / estimated_before_input`. This is a pricing-equivalent input estimate, not a strict raw-token reduction. |
+| Billing input estimate | `(estimated_before_input - (provider_uncached_input + provider_cached_input * ANALYTICS_CACHED_INPUT_COST_MULTIPLIER)) / estimated_before_input`. This is a one-sided diagnostic estimate, not provider-credit savings, raw-token capacity, or usefulness proof. |
 | Provider estimate deltas | Diagnostic only. Estimated-before and estimated-after input token rows minus provider-reported input tokens must not be used as operator-facing value proof. |
-| Cost fields | Estimated baseline rows from `cost_calculations` compared with measured `provider_calls.cost_total`. |
+| Cost fields | Estimated baseline rows from `cost_calculations` compared with measured `provider_calls.cost_total`. Missing observed cost stays unavailable; estimated deltas are diagnostics. |
 | Cache fields | `cache_activities` rows joined to matching executions. |
 | Negative savings | Executions where `tokens_saved < 0`. |
 | Failures | Executions where `status='failed'`; failed rows can still have provider calls and token usage. |
@@ -263,10 +275,10 @@ Chunk rows support three storage patterns:
 - `inline`: store content directly in PostgreSQL.
 - `external_ref`: store references to content managed elsewhere.
 
-The LiteLLM callback uses `hash_only` by default. CCR compatibility entries may
-store content because retrieval needs the compressed chunk payload. Routine
-record detail APIs expose content-present booleans and hashes, not raw provider
-metadata or chunk content.
+The LiteLLM callback uses `hash_only` by default. CCR entries may store content
+because retrieval needs the compressed chunk payload. Routine record detail APIs
+expose content-present booleans and hashes, not raw provider metadata or chunk
+content.
 
 The schema includes `retention_policies` and
 `compression_chunks.retention_expires_at` so content and metadata retention can
@@ -339,7 +351,7 @@ For analytics plumbing changes, prove runtime behavior before unit tests:
 
 1. Backend readiness and migration head.
 2. Runtime ingest/retrieve/stats/metrics smoke with a unique marker.
-3. CCR compatibility smoke through the supported backend entry point.
+3. CCR smoke through the supported backend entry point.
 4. LiteLLM callback buffer smoke.
 5. MCP retrieval and metrics smoke.
 6. Dashboard stats and simulation smokes.
@@ -373,8 +385,7 @@ make e2e
 - Dashboard APIs are computed from source tables rather than materialized
   aggregates. This keeps results reproducible and makes pricing recalculation
   possible; add materialized read models later only with refresh provenance.
-- The CCR compatibility adapter uses a synchronous HTTP client because the
-  imported store backend protocol is synchronous. The custom backend itself is
-  asyncio-first.
+- The CCR adapter uses a synchronous HTTP client because the imported store
+  backend protocol is synchronous. The custom backend itself is asyncio-first.
 - Automatic retention enforcement, Redis write-through caching, and dashboard
   UI polish are intentionally outside the first useful slice.

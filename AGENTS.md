@@ -18,12 +18,16 @@ only, not an operator-facing service in this repository.
 - Do not expose Headroom in operator-facing names for dashboards, MCP servers
   or tools, Prometheus metrics, wrapper commands, README workflows, or status
   text. Use LiteLLM/analytics/compression names instead. Existing `HEADROOM_*`
-  environment variables, package paths, and compatibility route names are
+  environment variables, package paths, and CCR adapter route names are
   library-adapter details, not product surfaces.
 - Do not monkeypatch or mutate LiteLLM or Headroom internals, route tables,
   callbacks, clients, or package files just because it is possible.
 - Keep custom code small, explicit, and locally owned.
-- Any unavoidable compatibility shim must be isolated, named as a shim, covered by a regression test, and justified in docs before it is expanded.
+- This repository has no deployment compatibility contract. It is developed and
+  tested on one local machine, so do not keep backward-compatibility shims,
+  legacy headers, legacy routes, legacy env vars, aliases, or fallback behavior.
+  When a repo-owned name changes, update all code, docs, tests, and scripts to
+  the new name in the same change and delete the old path.
 - Usefulness comes before unit tests. For integration fixes, first prove the real workflow works with runtime evidence: the relevant localhost endpoint, Compose service, browser network capture, logs, or trace output. Add or update unit/config tests after that evidence, not as the primary proof.
 
 ## Primary Usefulness Rule

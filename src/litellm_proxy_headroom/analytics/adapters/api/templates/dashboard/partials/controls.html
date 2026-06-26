@@ -87,11 +87,11 @@
     </label>
 
     <label>
-      <span>Savings</span>
+      <span>Token delta</span>
       <select name="negative_savings">
         <option value="" {% if query.filters.negative_savings is none %}selected{% endif %}>All</option>
-        <option value="true" {% if query.filters.negative_savings is sameas true %}selected{% endif %}>Negative only</option>
-        <option value="false" {% if query.filters.negative_savings is sameas false %}selected{% endif %}>Non-negative</option>
+        <option value="true" {% if query.filters.negative_savings is sameas true %}selected{% endif %}>Expanded only</option>
+        <option value="false" {% if query.filters.negative_savings is sameas false %}selected{% endif %}>Non-expanding</option>
       </select>
     </label>
 

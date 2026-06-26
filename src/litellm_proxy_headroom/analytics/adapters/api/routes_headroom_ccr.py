@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import time
+
 from fastapi import APIRouter, status
 from starlette.responses import JSONResponse
 
@@ -30,10 +32,34 @@ async def put_headroom_ccr_entry(
             status_code=status.HTTP_400_BAD_REQUEST,
             content={"detail": "hash path and payload mismatch"},
         )
+    telemetry = get_analytics_telemetry()
     repository = AnalyticsPostgresRepository(session)
-    result = await AnalyticsIngestionService(repository).ingest_compression_activity(
-        ccr_ingest_command(entry)
-    )
+    command = ccr_ingest_command(entry)
+    started = time.perf_counter()
+    with telemetry.start_span(
+        "litellm.proxy.analytics.ccr.store",
+        {
+            "litellm.proxy.analytics.operation": "store_ccr_entry",
+            "litellm.proxy.analytics.ccr_hash": hash_key,
+        },
+    ):
+        try:
+            result = await AnalyticsIngestionService(
+                repository
+            ).ingest_compression_activity(command)
+        except Exception as exc:
+            telemetry.mark_span_error(exc)
+            telemetry.record_ingest(
+                command,
+                latency_ms=max(int((time.perf_counter() - started) * 1000), 0),
+                success=False,
+            )
+            raise
+        telemetry.record_ingest(
+            command,
+            latency_ms=max(int((time.perf_counter() - started) * 1000), 0),
+            success=True,
+        )
     return IngestionResponse(
         event_id=result.event_id,
         request_id=result.request_id,

@@ -13,7 +13,7 @@
           <th scope="col">Status</th>
           <th scope="col">Provider</th>
           <th scope="col">Model</th>
-          <th scope="col">Saved</th>
+          <th scope="col">Delta</th>
           <th scope="col">Ratio</th>
           <th scope="col">Retr</th>
         </tr>
@@ -28,7 +28,7 @@
           <td data-label="Status"><span class="status-dot status-dot--{{ record.status|status_tone }}">{{ record.status }}</span></td>
           <td data-label="Provider">{{ record.provider or 'unknown' }}</td>
           <td data-label="Model">{{ record.model or 'unknown' }}</td>
-          <td data-label="Saved">{{ record.tokens_saved|integer }}</td>
+          <td data-label="Delta">{{ record.tokens_saved|integer }}</td>
           <td data-label="Ratio">{{ record.compression_ratio|ratio }}</td>
           <td data-label="Retr">{{ record.retrievals|integer }}</td>
         </tr>

@@ -18,12 +18,41 @@ from opentelemetry.sdk.trace.export import (
     SimpleSpanProcessor,
 )
 
+DEFAULT_ANALYTICS_OTEL_EXCLUDED_URL_PATTERNS = (
+    r"://[^/]+/health(?:$|[/?#])",
+    r"://[^/]+/ready(?:$|[/?#])",
+    r"://[^/]+/live(?:$|[/?#])",
+    r"://[^/]+/liveness(?:$|[/?#])",
+    r"://[^/]+/readiness(?:$|[/?#])",
+    r"://[^/]+/metrics(?:$|[/?#])",
+    r"://[^/]+/favicon\.ico(?:$|[?#])",
+    r"://[^/]+/docs(?:$|[/?#])",
+    r"://[^/]+/redoc(?:$|[/?#])",
+    r"://[^/]+/openapi\.json(?:$|[?#])",
+    r"://[^/]+/dashboard/static(?:$|[/?#])",
+    r"://[^/]+/dashboard/partials/live(?:$|[/?#])",
+)
+DEFAULT_ANALYTICS_OTEL_EXCLUDED_URLS = ",".join(
+    DEFAULT_ANALYTICS_OTEL_EXCLUDED_URL_PATTERNS
+)
+
 
 def _enabled(name: str, default: bool) -> bool:
     raw = os.getenv(name)
     if raw is None:
         return default
     return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _analytics_excluded_urls() -> str:
+    local = os.getenv("LITELLM_PROXY_ANALYTICS_OTEL_EXCLUDED_URLS")
+    if local is not None and local.strip():
+        return local.strip()
+    for name in ("OTEL_PYTHON_FASTAPI_EXCLUDED_URLS", "OTEL_PYTHON_EXCLUDED_URLS"):
+        raw = os.getenv(name)
+        if raw is not None:
+            return raw.strip()
+    return DEFAULT_ANALYTICS_OTEL_EXCLUDED_URLS
 
 
 def _service_resource() -> Resource:
@@ -106,5 +135,6 @@ def instrument_analytics_app(app: FastAPI) -> None:
         app,
         tracer_provider=trace.get_tracer_provider(),
         meter_provider=metrics.get_meter_provider(),
+        excluded_urls=_analytics_excluded_urls(),
         exclude_spans=["receive", "send"],
     )

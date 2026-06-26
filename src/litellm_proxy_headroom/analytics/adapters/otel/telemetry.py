@@ -9,6 +9,7 @@ from opentelemetry.trace import Status, StatusCode
 
 from ...application.buffering import AsyncIngestionBufferSnapshot
 from ...application.commands import CompressionActivityIngestCommand
+from .trace_story import record_current_compression_story
 
 LOW_CARD_UNKNOWN = "unknown"
 
@@ -132,6 +133,22 @@ class AnalyticsTelemetry:
         span.record_exception(exc)
         span.set_status(Status(StatusCode.ERROR, exc.__class__.__name__))
 
+    def record_compression_story(
+        self,
+        command: CompressionActivityIngestCommand,
+        *,
+        latency_ms: int | None = None,
+        success: bool | None = None,
+    ) -> None:
+        try:
+            record_current_compression_story(
+                command,
+                success=success,
+                latency_ms=latency_ms,
+            )
+        except Exception:
+            return
+
     def record_ingest(
         self,
         command: CompressionActivityIngestCommand,
@@ -139,6 +156,11 @@ class AnalyticsTelemetry:
         latency_ms: int,
         success: bool,
     ) -> None:
+        self.record_compression_story(
+            command,
+            latency_ms=latency_ms,
+            success=success,
+        )
         status = "ok" if success else "error"
         persistence_attrs = _attrs(
             **{

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import argparse
+import csv
+import io
 import json
 import os
 import re
@@ -807,6 +809,216 @@ drop table if exists agent90_matched_requests;
 """
 
 
+def _db_matched_requests_cte_sql(
+    started_at_placeholder: str,
+    ended_at_placeholder: str,
+    marker_placeholder: str,
+    savings_profile_placeholder: str,
+    grace_seconds: int,
+) -> str:
+    return f"""with agent90_matched_requests as (
+select
+  '{savings_profile_placeholder}' as expected_strategy_name,
+  cr.request_key,
+  cr.created_at,
+  cr.incoming_route,
+  cr.request_metadata->>'litellm_proxy_run_marker' as litellm_proxy_run_marker,
+  cr.request_metadata->>'litellm_proxy_project' as litellm_proxy_project,
+  cr.request_metadata->>'litellm_proxy_client' as litellm_proxy_client,
+  case
+    when cr.request_metadata->>'litellm_proxy_run_marker' = '{marker_placeholder}'
+    then 'marker'
+    else 'time_window'
+  end as correlation_source,
+  c.strategy_name,
+  c.strategy_version,
+  ce.status as execution_status,
+  ce.original_tokens,
+  ce.compressed_tokens,
+  ce.tokens_saved,
+  ce.compression_ratio,
+  ce.transforms,
+  pc.provider_call_key,
+  pc.litellm_call_id,
+  pc.provider_request_id,
+  pc.provider_response_id,
+  pc.provider,
+  pc.model,
+  pc.status as provider_status,
+  tub.measurement_source,
+  tub.input_tokens,
+  tub.cached_input_tokens,
+  tub.newly_processed_input_tokens,
+  tub.cache_write_tokens,
+  tub.output_tokens,
+  tub.reasoning_tokens,
+  tub.total_tokens,
+  pc.cost_total,
+  pc.currency
+from compression_requests cr
+join compression_executions ce on ce.request_id = cr.id
+join compression_config_snapshots c on c.id = ce.config_snapshot_id
+left join provider_calls pc on pc.execution_id = ce.id
+left join token_usage_breakdowns tub on tub.provider_call_id = pc.id
+where cr.incoming_route = '/v1/responses'
+  and (
+    cr.request_metadata->>'litellm_proxy_run_marker' = '{marker_placeholder}'
+    or (
+      cr.created_at >= '{started_at_placeholder}'::timestamptz
+      and cr.created_at <= (
+        '{ended_at_placeholder}'::timestamptz + interval '{grace_seconds} seconds'
+      )
+    )
+  )
+)"""
+
+
+def _db_aggregate_csv_sql(
+    started_at_placeholder: str = "<proxy_started_at_utc>",
+    ended_at_placeholder: str = "<proxy_ended_at_utc>",
+    marker_placeholder: str = "<marker>",
+    savings_profile_placeholder: str = "<expected_savings_profile>",
+    grace_seconds: int = 300,
+) -> str:
+    return (
+        _db_matched_requests_cte_sql(
+            started_at_placeholder,
+            ended_at_placeholder,
+            marker_placeholder,
+            savings_profile_placeholder,
+            grace_seconds,
+        )
+        + f"""
+select
+  'aggregate' as proof_row_type,
+  '{savings_profile_placeholder}' as expected_strategy_name,
+  '{marker_placeholder}' as requested_marker,
+  min(created_at) as first_request_at,
+  max(created_at) as last_request_at,
+  count(distinct request_key) as request_count,
+  count(*) as execution_row_count,
+  count(provider_call_key) filter (
+    where measurement_source = 'provider_reported'
+  ) as provider_reported_call_count,
+  string_agg(distinct model, ', ' order by model) filter (
+    where model is not null
+  ) as models,
+  sum(input_tokens) filter (
+    where measurement_source = 'provider_reported'
+  ) as aggregate_input_tokens,
+  sum(cached_input_tokens) filter (
+    where measurement_source = 'provider_reported'
+  ) as aggregate_cached_input_tokens,
+  sum(
+    coalesce(
+      newly_processed_input_tokens,
+      greatest(coalesce(input_tokens, 0) - coalesce(cached_input_tokens, 0), 0)
+    )
+  ) filter (
+    where measurement_source = 'provider_reported'
+  ) as aggregate_newly_processed_input_tokens,
+  round(
+    (
+      sum(coalesce(cached_input_tokens, 0)) filter (
+        where measurement_source = 'provider_reported'
+      )
+    )::numeric
+    / nullif(
+      (
+        sum(coalesce(input_tokens, 0)) filter (
+          where measurement_source = 'provider_reported'
+        )
+      )::numeric,
+      0
+    ),
+    6
+  ) as aggregate_cached_input_ratio,
+  sum(output_tokens) filter (
+    where measurement_source = 'provider_reported'
+  ) as aggregate_output_tokens,
+  sum(reasoning_tokens) filter (
+    where measurement_source = 'provider_reported'
+  ) as aggregate_reasoning_tokens,
+  sum(total_tokens) filter (
+    where measurement_source = 'provider_reported'
+  ) as aggregate_total_tokens,
+  sum(original_tokens) as aggregate_original_tokens,
+  sum(compressed_tokens) as aggregate_compressed_tokens,
+  sum(tokens_saved) as aggregate_tokens_saved,
+  count(distinct transforms #>> '{{cache_hot_zone,stable_top_level_hash}}')
+    as distinct_stable_top_level_hashes,
+  count(distinct transforms #>> '{{cache_hot_zone,stable_input_prefix_hash}}')
+    as distinct_stable_input_prefix_hashes,
+  count(
+    distinct transforms
+      #>> '{{cache_hot_zone,stable_prefix_without_prompt_cache_key_hash}}'
+  ) as distinct_stable_prefix_without_prompt_cache_key_hashes,
+  count(
+    distinct transforms
+      #>> '{{cache_hot_zone,stable_top_level_field_hashes,prompt_cache_key}}'
+  ) as distinct_prompt_cache_key_hashes
+from agent90_matched_requests;
+"""
+    )
+
+
+def _db_rows_csv_sql(
+    started_at_placeholder: str = "<proxy_started_at_utc>",
+    ended_at_placeholder: str = "<proxy_ended_at_utc>",
+    marker_placeholder: str = "<marker>",
+    savings_profile_placeholder: str = "<expected_savings_profile>",
+    grace_seconds: int = 300,
+) -> str:
+    return (
+        _db_matched_requests_cte_sql(
+            started_at_placeholder,
+            ended_at_placeholder,
+            marker_placeholder,
+            savings_profile_placeholder,
+            grace_seconds,
+        )
+        + """
+select
+  'call' as proof_row_type,
+  expected_strategy_name,
+  request_key,
+  created_at,
+  incoming_route,
+  litellm_proxy_run_marker,
+  litellm_proxy_project,
+  litellm_proxy_client,
+  correlation_source,
+  strategy_name,
+  strategy_version,
+  execution_status,
+  original_tokens,
+  compressed_tokens,
+  tokens_saved,
+  compression_ratio,
+  transforms,
+  provider_call_key,
+  litellm_call_id,
+  provider_request_id,
+  provider_response_id,
+  provider,
+  model,
+  provider_status,
+  measurement_source,
+  input_tokens,
+  cached_input_tokens,
+  newly_processed_input_tokens,
+  cache_write_tokens,
+  output_tokens,
+  reasoning_tokens,
+  total_tokens,
+  cost_total,
+  currency
+from agent90_matched_requests
+order by created_at desc;
+"""
+    )
+
+
 def _db_artifacts(artifact_dir: Path) -> dict[str, str]:
     proxy_dir = artifact_dir / "proxy"
     return {
@@ -814,6 +1026,14 @@ def _db_artifacts(artifact_dir: Path) -> dict[str, str]:
         "stdout": str(proxy_dir / "db-proof.stdout.txt"),
         "stderr": str(proxy_dir / "db-proof.stderr.txt"),
         "result": str(proxy_dir / "db-proof-result.json"),
+        "aggregate_query": str(proxy_dir / "db-proof-aggregate.sql"),
+        "aggregate_csv": str(proxy_dir / "db-proof-aggregate.csv"),
+        "aggregate_json": str(proxy_dir / "db-proof-aggregate.json"),
+        "aggregate_stderr": str(proxy_dir / "db-proof-aggregate.stderr.txt"),
+        "rows_query": str(proxy_dir / "db-proof-rows.sql"),
+        "rows_csv": str(proxy_dir / "db-proof-rows.csv"),
+        "rows_json": str(proxy_dir / "db-proof-rows.json"),
+        "rows_stderr": str(proxy_dir / "db-proof-rows.stderr.txt"),
     }
 
 
@@ -956,7 +1176,34 @@ def build_plan(args: argparse.Namespace) -> dict[str, Any]:
                 "-f",
                 "-",
             ],
+            "csv_manual_command": [
+                args.docker_bin,
+                "compose",
+                "exec",
+                "-T",
+                "analytics-db",
+                "psql",
+                "-U",
+                "analytics",
+                "-d",
+                "analytics",
+                "-v",
+                "ON_ERROR_STOP=1",
+                "-P",
+                "pager=off",
+                "--csv",
+                "-f",
+                "-",
+            ],
             "manual_command_stdin_file": db_artifacts["query"],
+            "aggregate_query_template": _db_aggregate_csv_sql(
+                savings_profile_placeholder=args.savings_profile,
+                grace_seconds=args.db_window_grace_seconds,
+            ),
+            "rows_query_template": _db_rows_csv_sql(
+                savings_profile_placeholder=args.savings_profile,
+                grace_seconds=args.db_window_grace_seconds,
+            ),
         },
         "stop_rules": [
             "Do not print or inspect ChatGPT/Codex auth token contents.",
@@ -1380,18 +1627,102 @@ def _run_db_query(plan: dict[str, Any], *, timeout: int) -> dict[str, Any]:
 
     _write_text(artifacts["stdout"], completed.stdout)
     _write_text(artifacts["stderr"], completed.stderr)
+    aggregate_result = None
+    rows_result = None
+    if completed.returncode == 0:
+        aggregate_result = _run_structured_db_query(
+            plan,
+            query_text=artifacts["aggregate_query"].read_text(),
+            stdout_path=artifacts["aggregate_csv"],
+            stderr_path=artifacts["aggregate_stderr"],
+            json_path=artifacts["aggregate_json"],
+            expect_single=True,
+            timeout=timeout,
+        )
+        rows_result = _run_structured_db_query(
+            plan,
+            query_text=artifacts["rows_query"].read_text(),
+            stdout_path=artifacts["rows_csv"],
+            stderr_path=artifacts["rows_stderr"],
+            json_path=artifacts["rows_json"],
+            expect_single=False,
+            timeout=timeout,
+        )
+    structured_returncodes = [
+        result["returncode"]
+        for result in (aggregate_result, rows_result)
+        if result is not None
+    ]
+    returncode = completed.returncode
+    if returncode == 0 and any(code != 0 for code in structured_returncodes):
+        returncode = next(code for code in structured_returncodes if code != 0)
     result = {
         "started_at": started_at,
         "ended_at": ended_at,
-        "returncode": completed.returncode,
+        "returncode": returncode,
+        "text_returncode": completed.returncode,
         "command": plan["proxy_db"]["manual_command"],
         "query": str(artifacts["query"]),
         "stdin": str(artifacts["query"]),
         "stdout": str(artifacts["stdout"]),
         "stderr": str(artifacts["stderr"]),
+        "aggregate_result": aggregate_result,
+        "rows_result": rows_result,
+        "structured_artifacts": {
+            "aggregate_csv": str(artifacts["aggregate_csv"]),
+            "aggregate_json": str(artifacts["aggregate_json"]),
+            "rows_csv": str(artifacts["rows_csv"]),
+            "rows_json": str(artifacts["rows_json"]),
+        },
     }
     _write_json(artifacts["result"], result)
     return result
+
+
+def _csv_rows(text: str) -> list[dict[str, str]]:
+    if not text.strip():
+        return []
+    reader = csv.DictReader(io.StringIO(text))
+    return [dict(row) for row in reader]
+
+
+def _run_structured_db_query(
+    plan: dict[str, Any],
+    *,
+    query_text: str,
+    stdout_path: Path,
+    stderr_path: Path,
+    json_path: Path,
+    expect_single: bool,
+    timeout: int,
+) -> dict[str, Any]:
+    started_at = _utc_now()
+    completed = subprocess.run(
+        plan["proxy_db"]["csv_manual_command"],
+        cwd=Path(plan["workdir"]),
+        input=query_text,
+        text=True,
+        capture_output=True,
+        timeout=timeout,
+        check=False,
+    )
+    ended_at = _utc_now()
+
+    _write_text(stdout_path, completed.stdout)
+    _write_text(stderr_path, completed.stderr)
+    rows = _csv_rows(completed.stdout) if completed.returncode == 0 else []
+    payload: Any = rows[0] if expect_single and rows else {} if expect_single else rows
+    _write_json(json_path, payload)
+    return {
+        "started_at": started_at,
+        "ended_at": ended_at,
+        "returncode": completed.returncode,
+        "command": plan["proxy_db"]["csv_manual_command"],
+        "stdout": str(stdout_path),
+        "stderr": str(stderr_path),
+        "json": str(json_path),
+        "row_count": len(rows),
+    }
 
 
 def execute_plan(
@@ -1466,9 +1797,31 @@ def execute_plan(
     proxy_started_at = results[-1]["started_at"]
     proxy_ended_at = results[-1]["ended_at"]
     query_path = Path(plan["proxy_db"]["query_file"])
+    aggregate_query_path = Path(plan["proxy_db"]["artifacts"]["aggregate_query"])
+    rows_query_path = Path(plan["proxy_db"]["artifacts"]["rows_query"])
     _write_text(
         query_path,
         _db_query_sql(
+            proxy_started_at,
+            proxy_ended_at,
+            plan["marker"],
+            str(plan["task"]["expected_savings_profile"]),
+            grace_seconds=int(plan["proxy_db"]["window_grace_seconds"]),
+        ),
+    )
+    _write_text(
+        aggregate_query_path,
+        _db_aggregate_csv_sql(
+            proxy_started_at,
+            proxy_ended_at,
+            plan["marker"],
+            str(plan["task"]["expected_savings_profile"]),
+            grace_seconds=int(plan["proxy_db"]["window_grace_seconds"]),
+        ),
+    )
+    _write_text(
+        rows_query_path,
+        _db_rows_csv_sql(
             proxy_started_at,
             proxy_ended_at,
             plan["marker"],
@@ -1484,8 +1837,11 @@ def execute_plan(
         "results": results,
         "token_comparison": _compare_token_summaries(results),
         "proxy_db_query_file": str(query_path),
+        "proxy_db_aggregate_query_file": str(aggregate_query_path),
+        "proxy_db_rows_query_file": str(rows_query_path),
         "proxy_db_result": proxy_db_result,
         "proxy_db_manual_command": plan["proxy_db"]["manual_command"],
+        "proxy_db_csv_manual_command": plan["proxy_db"]["csv_manual_command"],
     }
     _write_json(artifact_dir / "summary.json", summary)
     if proxy_db_result is not None and proxy_db_result["returncode"] != 0:

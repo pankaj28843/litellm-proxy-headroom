@@ -159,10 +159,10 @@ def test_codex_wrapper_generates_responses_provider_config(tmp_path: Path) -> No
         "env_key": "OPENAI_API_KEY",
         "wire_api": "responses",
         "env_http_headers": {
-            "X-LiteLLM-Proxy-Client": "CODEX_LITELLM_CLIENT",
-            "X-LiteLLM-Proxy-Project": "CODEX_LITELLM_PROJECT",
-            "X-LiteLLM-Proxy-Run": "LITELLM_PROXY_RUN_MARKER",
-            "X-LiteLLM-Proxy-Compression": "CODEX_LITELLM_COMPRESSION_MODE",
+            "X-LLM-Proxy-Client": "CODEX_LITELLM_CLIENT",
+            "X-LLM-Proxy-Project": "CODEX_LITELLM_PROJECT",
+            "X-LLM-Proxy-Run": "LITELLM_PROXY_RUN_MARKER",
+            "X-LLM-Proxy-Compression": "CODEX_LITELLM_COMPRESSION_MODE",
         },
     }
     assert "supports_websockets" not in provider
@@ -670,8 +670,8 @@ def test_claude_wrapper_generates_mcp_config_and_gateway_env(tmp_path: Path) -> 
     assert capture["anthropic_api_key_present"] is True
     assert capture["anthropic_custom_headers"] == "\n".join(
         [
-            "X-LiteLLM-Proxy-Client: claude",
-            "X-LiteLLM-Proxy-Project: litellm-proxy-headroom",
+            "X-LLM-Proxy-Client: claude",
+            "X-LLM-Proxy-Project: litellm-proxy-headroom",
         ]
     )
     assert capture["gateway_model_discovery"] == "1"
@@ -729,10 +729,10 @@ def test_claude_wrapper_preserves_existing_custom_headers_and_adds_run_marker(
     assert capture["anthropic_custom_headers"] == "\n".join(
         [
             "x-existing: value",
-            "X-LiteLLM-Proxy-Client: claude-smoke",
-            "X-LiteLLM-Proxy-Project: project one",
-            "X-LiteLLM-Proxy-Run: CLAUDE-RUN-1",
-            "X-LiteLLM-Proxy-Compression: off",
+            "X-LLM-Proxy-Client: claude-smoke",
+            "X-LLM-Proxy-Project: project one",
+            "X-LLM-Proxy-Run: CLAUDE-RUN-1",
+            "X-LLM-Proxy-Compression: off",
         ]
     )
     assert capture["claude_litellm_compression_mode"] == "off"
@@ -839,10 +839,10 @@ def test_opencode_wrapper_generates_managed_config_and_env(tmp_path: Path) -> No
     assert provider["options"]["baseURL"] == "http://127.0.0.1:4000/v1"
     assert provider["options"]["apiKey"] == "{env:LITELLM_MASTER_KEY}"
     assert provider["options"]["headers"] == {
-        "X-LiteLLM-Proxy-Client": "{env:OPENCODE_LITELLM_CLIENT}",
-        "X-LiteLLM-Proxy-Project": "{env:OPENCODE_LITELLM_PROJECT}",
-        "X-LiteLLM-Proxy-Run": "{env:LITELLM_PROXY_RUN_MARKER}",
-        "X-LiteLLM-Proxy-Compression": "{env:OPENCODE_LITELLM_COMPRESSION_MODE}",
+        "X-LLM-Proxy-Client": "{env:OPENCODE_LITELLM_CLIENT}",
+        "X-LLM-Proxy-Project": "{env:OPENCODE_LITELLM_PROJECT}",
+        "X-LLM-Proxy-Run": "{env:LITELLM_PROXY_RUN_MARKER}",
+        "X-LLM-Proxy-Compression": "{env:OPENCODE_LITELLM_COMPRESSION_MODE}",
     }
     assert config["mcp"]["analytics"] == {
         "type": "remote",
@@ -886,7 +886,7 @@ def test_opencode_wrapper_respects_existing_model_argument(tmp_path: Path) -> No
 
     config = json.loads((managed_home / "opencode.json").read_text())
     assert (
-        "X-LiteLLM-Proxy-Compression"
+        "X-LLM-Proxy-Compression"
         not in config["provider"]["litellm"]["options"]["headers"]
     )
 
@@ -1004,10 +1004,10 @@ def test_pi_wrapper_generates_managed_models_config_and_env(tmp_path: Path) -> N
         },
     ]
     assert provider["headers"] == {
-        "X-LiteLLM-Proxy-Client": "$PI_LITELLM_CLIENT",
-        "X-LiteLLM-Proxy-Project": "$PI_LITELLM_PROJECT",
-        "X-LiteLLM-Proxy-Run": "$LITELLM_PROXY_RUN_MARKER",
-        "X-LiteLLM-Proxy-Compression": "$PI_LITELLM_COMPRESSION_MODE",
+        "X-LLM-Proxy-Client": "$PI_LITELLM_CLIENT",
+        "X-LLM-Proxy-Project": "$PI_LITELLM_PROJECT",
+        "X-LLM-Proxy-Run": "$LITELLM_PROXY_RUN_MARKER",
+        "X-LLM-Proxy-Compression": "$PI_LITELLM_COMPRESSION_MODE",
     }
     assert "sk-test-wrapper-key" not in models_path.read_text()
 
@@ -1044,9 +1044,7 @@ def test_pi_wrapper_respects_existing_model_argument(tmp_path: Path) -> None:
     ]
 
     config = json.loads((managed_home / "models.json").read_text())
-    assert (
-        "X-LiteLLM-Proxy-Compression" not in config["providers"]["litellm"]["headers"]
-    )
+    assert "X-LLM-Proxy-Compression" not in config["providers"]["litellm"]["headers"]
 
 
 def test_pi_wrapper_does_not_add_model_to_management_commands(

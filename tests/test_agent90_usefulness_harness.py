@@ -899,9 +899,15 @@ def test_agent90_usefulness_execute_writes_token_summary_artifacts(
     )
     docker_bin.write_text(
         "#!/usr/bin/env python3\n"
-        "print('request_key strategy_name measurement_source input_tokens "
+        "import sys\n"
+        "if '--csv' in sys.argv:\n"
+        "    print('proof_row_type,request_key,strategy_name,measurement_source,"
+        "input_tokens,cached_input_tokens,cost_total')\n"
+        "    print('call,proxy-request,agent-90,provider_reported,900,300,0.001')\n"
+        "else:\n"
+        "    print('request_key strategy_name measurement_source input_tokens "
         "cached_input_tokens cost_total')\n"
-        "print('proxy-request agent-90 provider_reported 900 300 0.001')\n"
+        "    print('proxy-request agent-90 provider_reported 900 300 0.001')\n"
     )
     direct_bin.chmod(0o755)
     proxy_bin.chmod(0o755)
@@ -1050,7 +1056,39 @@ def test_agent90_usefulness_execute_writes_token_summary_artifacts(
     )
     assert db_result["returncode"] == 0
     assert db_result["stdin"].endswith("proxy/db-proof.sql")
+    assert db_result["aggregate_result"]["returncode"] == 0
+    assert db_result["aggregate_result"]["row_count"] == 1
+    assert db_result["rows_result"]["returncode"] == 0
+    assert db_result["rows_result"]["row_count"] == 1
+    assert db_result["structured_artifacts"]["aggregate_csv"].endswith(
+        "proxy/db-proof-aggregate.csv"
+    )
+    assert db_result["structured_artifacts"]["aggregate_json"].endswith(
+        "proxy/db-proof-aggregate.json"
+    )
+    assert db_result["structured_artifacts"]["rows_csv"].endswith(
+        "proxy/db-proof-rows.csv"
+    )
+    assert db_result["structured_artifacts"]["rows_json"].endswith(
+        "proxy/db-proof-rows.json"
+    )
+    assert (
+        json.loads((artifact_dir / "proxy" / "db-proof-aggregate.json").read_text())[
+            "request_key"
+        ]
+        == "proxy-request"
+    )
+    assert (
+        json.loads((artifact_dir / "proxy" / "db-proof-rows.json").read_text())[0][
+            "measurement_source"
+        ]
+        == "provider_reported"
+    )
     assert summary["proxy_db_result"]["returncode"] == 0
+    assert summary["proxy_db_aggregate_query_file"].endswith(
+        "proxy/db-proof-aggregate.sql"
+    )
+    assert summary["proxy_db_rows_query_file"].endswith("proxy/db-proof-rows.sql")
 
 
 def test_agent90_usefulness_execute_passes_usage_cache_when_cost_unavailable(

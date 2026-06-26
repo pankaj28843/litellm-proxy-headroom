@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 
-def load_shim_module():
+def load_adapter_module():
     spec = importlib.util.spec_from_file_location(
         "headroom_litellm_callback",
         Path("config/headroom_litellm_callback.py"),
@@ -18,12 +18,12 @@ def load_shim_module():
     return module
 
 
-def load_shim_callback() -> type:
-    return load_shim_module().HeadroomCallback
+def load_adapter_callback() -> type:
+    return load_adapter_module().HeadroomCallback
 
 
-def test_headroom_callback_shim_exposes_litellm_post_call_hooks() -> None:
-    callback = load_shim_callback()(api_key=None)
+def test_headroom_callback_adapter_exposes_litellm_post_call_hooks() -> None:
+    callback = load_adapter_callback()(api_key=None)
 
     assert hasattr(callback, "async_pre_call_hook")
     assert hasattr(callback, "async_success_handler")
@@ -32,14 +32,16 @@ def test_headroom_callback_shim_exposes_litellm_post_call_hooks() -> None:
     assert hasattr(callback, "async_post_call_failure_hook")
 
 
-def test_headroom_callback_shim_defines_pre_call_for_litellm_proxy_detection() -> None:
-    callback_class = load_shim_callback()
+def test_headroom_callback_adapter_defines_pre_call_for_litellm_proxy_detection() -> (
+    None
+):
+    callback_class = load_adapter_callback()
 
     assert "async_pre_call_hook" in vars(callback_class)
 
 
-def test_headroom_callback_shim_post_call_hooks_are_noops() -> None:
-    callback = load_shim_callback()(api_key=None)
+def test_headroom_callback_adapter_post_call_hooks_are_noops() -> None:
+    callback = load_adapter_callback()(api_key=None)
 
     success_result = asyncio.run(
         callback.async_post_call_success_hook({}, None, {"choices": []})
@@ -52,8 +54,8 @@ def test_headroom_callback_shim_post_call_hooks_are_noops() -> None:
     assert failure_result is None
 
 
-def test_headroom_callback_shim_exports_litellm_config_instance() -> None:
-    module = load_shim_module()
+def test_headroom_callback_adapter_exports_litellm_config_instance() -> None:
+    module = load_adapter_module()
 
     assert isinstance(module.headroom_callback, module.HeadroomCallback)
     assert hasattr(module.headroom_callback, "async_pre_call_hook")
@@ -63,7 +65,7 @@ def test_headroom_callback_shim_exports_litellm_config_instance() -> None:
 def test_local_compression_uses_agent_90_profile(monkeypatch) -> None:
     from types import SimpleNamespace
 
-    module = load_shim_module()
+    module = load_adapter_module()
 
     captured = {}
 
@@ -96,7 +98,7 @@ def test_local_compression_uses_headroom_savings_profile_env(monkeypatch) -> Non
     from types import SimpleNamespace
 
     monkeypatch.setenv("HEADROOM_SAVINGS_PROFILE", "balanced")
-    module = load_shim_module()
+    module = load_adapter_module()
 
     captured = {}
 
@@ -302,9 +304,10 @@ def test_responses_tool_output_compression_preserves_cache_hot_fields(
 ) -> None:
     from types import SimpleNamespace
 
-    module = load_shim_module()
+    module = load_adapter_module()
     from litellm_proxy_headroom.analytics.adapters.litellm import callback
 
+    monkeypatch.setenv("HEADROOM_RESPONSES_MUTABLE_OUTPUT_COMPRESSION", "1")
     long_output = "verbose tool output " * 80
     original_user_item = {
         "type": "message",
@@ -350,8 +353,8 @@ def test_responses_tool_output_compression_preserves_cache_hot_fields(
 
     monkeypatch.setattr(callback, "compress", fake_compress)
 
-    shim = module.HeadroomCallback()
-    result = asyncio.run(shim.async_pre_call_hook(data=data, call_type="aresponses"))
+    adapter = module.HeadroomCallback()
+    result = asyncio.run(adapter.async_pre_call_hook(data=data, call_type="aresponses"))
 
     assert result is data
     assert captured["messages"] == [{"role": "tool", "content": long_output}]
@@ -362,7 +365,7 @@ def test_responses_tool_output_compression_preserves_cache_hot_fields(
     assert data["input"][2]["output"] == "compressed tool output"
     assert data["input"][3]["type"] == "reasoning"
 
-    capture = shim._pending["responses-compress"]
+    capture = adapter._pending["responses-compress"]
     assert capture.tokens_before == 1000
     assert capture.tokens_after == 100
     assert capture.tokens_saved == 900
@@ -371,18 +374,61 @@ def test_responses_tool_output_compression_preserves_cache_hot_fields(
     assert "openai:responses:tool_output_units" in capture.transforms_applied
 
 
-def test_responses_cache_guard_preserves_tools_by_default_while_compressing_output(
+def test_responses_mutable_output_compression_is_disabled_by_default(
+    monkeypatch,
+) -> None:
+    module = load_adapter_module()
+    from litellm_proxy_headroom.analytics.adapters.litellm import callback
+
+    monkeypatch.delenv("HEADROOM_RESPONSES_MUTABLE_OUTPUT_COMPRESSION", raising=False)
+    long_output = "verbose tool output " * 80
+    data = {
+        "model": "gpt-5.5",
+        "input": [
+            {
+                "type": "function_call_output",
+                "call_id": "call_1",
+                "output": long_output,
+            }
+        ],
+        "metadata": {"request_id": "responses-output-disabled"},
+    }
+
+    def fail_compress(**_: object) -> None:
+        raise AssertionError("Responses output compression must be opt-in")
+
+    monkeypatch.setattr(callback, "compress", fail_compress)
+
+    adapter = module.HeadroomCallback()
+    result = asyncio.run(adapter.async_pre_call_hook(data=data, call_type="aresponses"))
+
+    assert result is data
+    assert data["input"][0]["output"] == long_output
+    capture = adapter._pending["responses-output-disabled"]
+    assert capture.compression_status == "skipped"
+    assert (
+        capture.skip_reason
+        == "responses_mutable_output_compression_disabled_no_positive_provider_proof"
+    )
+    assert capture.tokens_saved is None
+    assert capture.attempted_input_tokens == 0
+    assert "openai:responses:tool_output_units" not in capture.transforms_applied
+    assert capture.cache_hot_zone is not None
+
+
+def test_responses_cache_guard_preserves_tools_when_output_compression_is_enabled(
     monkeypatch,
 ) -> None:
     from types import SimpleNamespace
 
-    module = load_shim_module()
+    module = load_adapter_module()
     from litellm_proxy_headroom.analytics.adapters.litellm import callback
     from litellm_proxy_headroom.analytics.adapters.litellm.callback import (
         responses_cache_hot_zone_fingerprint,
     )
 
     monkeypatch.delenv("HEADROOM_RESPONSES_TOOL_SCHEMA_COMPACTION", raising=False)
+    monkeypatch.setenv("HEADROOM_RESPONSES_MUTABLE_OUTPUT_COMPRESSION", "1")
     verbose_description = " ".join(["Verbose schema description."] * 40)
     long_output = "verbose tool output " * 80
     data = {
@@ -446,8 +492,8 @@ def test_responses_cache_guard_preserves_tools_by_default_while_compressing_outp
 
     monkeypatch.setattr(callback, "compress", fake_compress)
 
-    shim = module.HeadroomCallback()
-    result = asyncio.run(shim.async_pre_call_hook(data=data, call_type="aresponses"))
+    adapter = module.HeadroomCallback()
+    result = asyncio.run(adapter.async_pre_call_hook(data=data, call_type="aresponses"))
     after = responses_cache_hot_zone_fingerprint(data)
 
     assert result is data
@@ -459,7 +505,7 @@ def test_responses_cache_guard_preserves_tools_by_default_while_compressing_outp
         == after["stable_top_level_field_hashes"]["tools"]
     )
 
-    capture = shim._pending["responses-cache-guard"]
+    capture = adapter._pending["responses-cache-guard"]
     assert "openai:responses:tool_output_units" in capture.transforms_applied
     assert "openai:responses:tool_schema_compaction" not in capture.transforms_applied
     assert capture.tokens_saved == 900
@@ -468,7 +514,7 @@ def test_responses_cache_guard_preserves_tools_by_default_while_compressing_outp
 def test_responses_compression_can_be_disabled_by_local_proxy_header(
     monkeypatch,
 ) -> None:
-    module = load_shim_module()
+    module = load_adapter_module()
     from litellm_proxy_headroom.analytics.adapters.litellm import callback
 
     long_output = "verbose tool output " * 80
@@ -485,8 +531,8 @@ def test_responses_compression_can_be_disabled_by_local_proxy_header(
         "metadata": {"request_id": "responses-compression-disabled"},
         "proxy_server_request": {
             "headers": {
-                "X-LiteLLM-Proxy-Client": "codex",
-                "X-LiteLLM-Proxy-Compression": "OFF",
+                "X-LLM-Proxy-Client": "codex",
+                "X-LLM-Proxy-Compression": "OFF",
             }
         },
     }
@@ -496,14 +542,14 @@ def test_responses_compression_can_be_disabled_by_local_proxy_header(
 
     monkeypatch.setattr(callback, "compress", fail_compress)
 
-    shim = module.HeadroomCallback()
-    result = asyncio.run(shim.async_pre_call_hook(data=data, call_type="aresponses"))
+    adapter = module.HeadroomCallback()
+    result = asyncio.run(adapter.async_pre_call_hook(data=data, call_type="aresponses"))
 
     assert result is data
     assert data["input"][0]["output"] == long_output
     assert data["litellm_session_id"].startswith("codex-cache-")
 
-    capture = shim._pending["responses-compression-disabled"]
+    capture = adapter._pending["responses-compression-disabled"]
     assert capture.skip_reason == "compression_disabled_by_proxy_header"
     assert capture.compression_status == "skipped"
     assert capture.tokens_before is None
@@ -516,7 +562,7 @@ def test_responses_compression_can_be_disabled_by_local_proxy_header(
 def test_message_compression_can_be_disabled_by_local_proxy_header(
     monkeypatch,
 ) -> None:
-    module = load_shim_module()
+    module = load_adapter_module()
     from litellm_proxy_headroom.analytics.adapters.litellm import callback
 
     messages = [{"role": "user", "content": "large prompt " * 100}]
@@ -526,8 +572,8 @@ def test_message_compression_can_be_disabled_by_local_proxy_header(
         "metadata": {"request_id": "messages-compression-disabled"},
         "proxy_server_request": {
             "headers": {
-                "X-LiteLLM-Proxy-Client": "claude",
-                "X-LiteLLM-Proxy-Compression": "off",
+                "X-LLM-Proxy-Client": "claude",
+                "X-LLM-Proxy-Compression": "off",
             }
         },
     }
@@ -537,13 +583,15 @@ def test_message_compression_can_be_disabled_by_local_proxy_header(
 
     monkeypatch.setattr(callback, "compress", fail_compress)
 
-    shim = module.HeadroomCallback()
-    result = asyncio.run(shim.async_pre_call_hook(data=data, call_type="acompletion"))
+    adapter = module.HeadroomCallback()
+    result = asyncio.run(
+        adapter.async_pre_call_hook(data=data, call_type="acompletion")
+    )
 
     assert result is data
     assert data["messages"] == messages
 
-    capture = shim._pending["messages-compression-disabled"]
+    capture = adapter._pending["messages-compression-disabled"]
     assert capture.skip_reason == "compression_disabled_by_proxy_header"
     assert capture.compression_status == "skipped"
     assert capture.request_metadata["litellm_proxy_client"] == "claude"
@@ -557,7 +605,7 @@ def test_responses_deployment_payload_diagnostic_is_content_free(
 ) -> None:
     from types import SimpleNamespace
 
-    module = load_shim_module()
+    module = load_adapter_module()
     from litellm_proxy_headroom.analytics.adapters.litellm import callback
 
     long_output = "verbose deployment tool output " * 80
@@ -584,13 +632,14 @@ def test_responses_deployment_payload_diagnostic_is_content_free(
             transforms_applied=["fake-transform"],
         )
 
+    monkeypatch.setenv("HEADROOM_RESPONSES_MUTABLE_OUTPUT_COMPRESSION", "1")
     monkeypatch.setattr(callback, "compress", fake_compress)
 
-    shim = module.HeadroomCallback()
-    asyncio.run(shim.async_pre_call_hook(data=data, call_type="aresponses"))
-    asyncio.run(shim.async_pre_call_deployment_hook(data, "aresponses"))
+    adapter = module.HeadroomCallback()
+    asyncio.run(adapter.async_pre_call_hook(data=data, call_type="aresponses"))
+    asyncio.run(adapter.async_pre_call_deployment_hook(data, "aresponses"))
 
-    diagnostic = shim._deployment_payload_shapes["responses-deployment-shape"]
+    diagnostic = adapter._deployment_payload_shapes["responses-deployment-shape"]
     mutable_output = diagnostic["mutable_output"]
 
     assert diagnostic["hook"] == "async_pre_call_deployment_hook"
@@ -604,7 +653,7 @@ def test_responses_deployment_payload_diagnostic_is_content_free(
 
 
 def test_codex_proxy_prompt_cache_key_is_preserved_by_default() -> None:
-    callback = load_shim_callback()()
+    callback = load_adapter_callback()()
     data = {
         "model": "gpt-5.5",
         "prompt_cache_key": "codex-generated-key",
@@ -612,7 +661,7 @@ def test_codex_proxy_prompt_cache_key_is_preserved_by_default() -> None:
         "metadata": {"request_id": "responses-cache-key-default"},
         "proxy_server_request": {
             "headers": {
-                "X-LiteLLM-Proxy-Client": "codex",
+                "X-LLM-Proxy-Client": "codex",
             }
         },
     }
@@ -635,8 +684,8 @@ def test_codex_proxy_prompt_cache_key_is_preserved_by_default() -> None:
 
 
 def test_codex_prompt_cache_key_sets_stable_chatgpt_session_affinity() -> None:
-    first_callback = load_shim_callback()()
-    second_callback = load_shim_callback()()
+    first_callback = load_adapter_callback()()
+    second_callback = load_adapter_callback()()
     first = {
         "model": "gpt-5.5",
         "prompt_cache_key": "codex-generated-key",
@@ -644,7 +693,7 @@ def test_codex_prompt_cache_key_sets_stable_chatgpt_session_affinity() -> None:
         "metadata": {"request_id": "responses-affinity-first"},
         "proxy_server_request": {
             "headers": {
-                "X-LiteLLM-Proxy-Client": "codex",
+                "X-LLM-Proxy-Client": "codex",
             }
         },
     }
@@ -674,7 +723,7 @@ def test_codex_prompt_cache_key_sets_stable_chatgpt_session_affinity() -> None:
 
 
 def test_codex_chatgpt_session_affinity_analytics_hash_is_model_scoped() -> None:
-    callback = load_shim_callback()()
+    callback = load_adapter_callback()()
     first = {
         "model": "gpt-5.5",
         "prompt_cache_key": "codex-generated-key",
@@ -682,7 +731,7 @@ def test_codex_chatgpt_session_affinity_analytics_hash_is_model_scoped() -> None
         "metadata": {"request_id": "responses-affinity-gpt55"},
         "proxy_server_request": {
             "headers": {
-                "X-LiteLLM-Proxy-Client": "codex",
+                "X-LLM-Proxy-Client": "codex",
             }
         },
     }
@@ -699,7 +748,7 @@ def test_codex_chatgpt_session_affinity_analytics_hash_is_model_scoped() -> None
 
 
 def test_codex_chatgpt_session_affinity_preserves_existing_session_id() -> None:
-    callback = load_shim_callback()()
+    callback = load_adapter_callback()()
     data = {
         "model": "gpt-5.5",
         "prompt_cache_key": "codex-generated-key",
@@ -708,7 +757,7 @@ def test_codex_chatgpt_session_affinity_preserves_existing_session_id() -> None:
         "metadata": {"request_id": "responses-existing-session"},
         "proxy_server_request": {
             "headers": {
-                "X-LiteLLM-Proxy-Client": "codex",
+                "X-LLM-Proxy-Client": "codex",
             }
         },
     }
@@ -728,7 +777,7 @@ def test_codex_proxy_prompt_cache_key_can_be_removed_for_experiments(
     monkeypatch,
 ) -> None:
     monkeypatch.setenv("HEADROOM_RESPONSES_DROP_CODEX_PROMPT_CACHE_KEY", "1")
-    callback = load_shim_callback()()
+    callback = load_adapter_callback()()
     data = {
         "model": "gpt-5.5",
         "prompt_cache_key": "volatile-codex-generated-key",
@@ -736,7 +785,7 @@ def test_codex_proxy_prompt_cache_key_can_be_removed_for_experiments(
         "metadata": {"request_id": "responses-cache-key-removed"},
         "proxy_server_request": {
             "headers": {
-                "X-LiteLLM-Proxy-Client": "codex",
+                "X-LLM-Proxy-Client": "codex",
             }
         },
     }
@@ -759,7 +808,7 @@ def test_codex_proxy_prompt_cache_key_can_be_removed_for_experiments(
 
 
 def test_non_codex_prompt_cache_key_is_preserved() -> None:
-    callback = load_shim_callback()()
+    callback = load_adapter_callback()()
     data = {
         "model": "gpt-5.5",
         "prompt_cache_key": "caller-owned-stable-key",
@@ -786,7 +835,7 @@ def test_non_codex_prompt_cache_key_is_preserved() -> None:
 
 def test_codex_responses_provider_passthrough_is_opt_in(monkeypatch) -> None:
     monkeypatch.setenv("HEADROOM_RESPONSES_CHATGPT_PROVIDER_PASSTHROUGH", "1")
-    callback = load_shim_callback()()
+    callback = load_adapter_callback()()
     data = {
         "model": "gpt-5.5",
         "prompt_cache_key": "codex-key",
@@ -851,7 +900,7 @@ def test_chatgpt_transform_can_skip_builtin_default_instruction_prefix(
 def test_responses_tool_schema_compaction_preserves_invocation_shape(
     monkeypatch,
 ) -> None:
-    module = load_shim_module()
+    module = load_adapter_module()
     from litellm_proxy_headroom.analytics.adapters.litellm import callback
 
     verbose = " ".join(["Use this tool to read a file from the workspace."] * 20)
@@ -890,8 +939,8 @@ def test_responses_tool_schema_compaction_preserves_invocation_shape(
     monkeypatch.setenv("HEADROOM_RESPONSES_TOOL_SCHEMA_COMPACTION", "1")
     monkeypatch.setattr(callback, "_count_text_tokens", lambda text, model: len(text))
 
-    shim = module.HeadroomCallback()
-    result = asyncio.run(shim.async_pre_call_hook(data=data, call_type="aresponses"))
+    adapter = module.HeadroomCallback()
+    result = asyncio.run(adapter.async_pre_call_hook(data=data, call_type="aresponses"))
 
     assert result is data
     assert data["input"] == "live user text should stay intact"
@@ -910,7 +959,7 @@ def test_responses_tool_schema_compaction_preserves_invocation_shape(
     assert "examples" not in params["properties"]["path"]
     assert "title" in params["properties"]
 
-    capture = shim._pending["responses-tool-schema"]
+    capture = adapter._pending["responses-tool-schema"]
     assert capture.skip_reason is None
     assert capture.compression_status is None
     assert capture.tokens_saved is not None
@@ -924,9 +973,10 @@ def test_responses_partial_compression_counts_unmodified_units_as_original(
 ) -> None:
     from types import SimpleNamespace
 
-    module = load_shim_module()
+    module = load_adapter_module()
     from litellm_proxy_headroom.analytics.adapters.litellm import callback
 
+    monkeypatch.setenv("HEADROOM_RESPONSES_MUTABLE_OUTPUT_COMPRESSION", "1")
     compressible_output = "compressible tool output " * 80
     unchanged_output = "already compact tool output " * 80
     data = {
@@ -968,14 +1018,14 @@ def test_responses_partial_compression_counts_unmodified_units_as_original(
 
     monkeypatch.setattr(callback, "compress", fake_compress)
 
-    shim = module.HeadroomCallback()
-    result = asyncio.run(shim.async_pre_call_hook(data=data, call_type="aresponses"))
+    adapter = module.HeadroomCallback()
+    result = asyncio.run(adapter.async_pre_call_hook(data=data, call_type="aresponses"))
 
     assert result is data
     assert data["input"][0]["output"] == "short tool output"
     assert data["input"][1]["output"] == unchanged_output
 
-    capture = shim._pending["responses-partial-compress"]
+    capture = adapter._pending["responses-partial-compress"]
     assert capture.tokens_before == 1200
     assert capture.tokens_saved == 900
     assert capture.tokens_after == 300
@@ -983,7 +1033,7 @@ def test_responses_partial_compression_counts_unmodified_units_as_original(
 
 
 def test_responses_retrieval_tool_output_is_protected(monkeypatch) -> None:
-    module = load_shim_module()
+    module = load_adapter_module()
     from litellm_proxy_headroom.analytics.adapters.litellm import callback
 
     retrieved_output = "retrieved original context " * 80
@@ -1010,13 +1060,13 @@ def test_responses_retrieval_tool_output_is_protected(monkeypatch) -> None:
 
     monkeypatch.setattr(callback, "compress", fail_compress)
 
-    shim = module.HeadroomCallback()
-    result = asyncio.run(shim.async_pre_call_hook(data=data, call_type="aresponses"))
+    adapter = module.HeadroomCallback()
+    result = asyncio.run(adapter.async_pre_call_hook(data=data, call_type="aresponses"))
 
     assert result is data
     assert data["input"][1]["output"] == retrieved_output
 
-    capture = shim._pending["responses-retrieval-protected"]
+    capture = adapter._pending["responses-retrieval-protected"]
     assert capture.skip_reason == "responses_retrieval_output_protected"
     assert capture.compression_status == "skipped"
     assert capture.tokens_before is None
@@ -1024,7 +1074,7 @@ def test_responses_retrieval_tool_output_is_protected(monkeypatch) -> None:
 
 
 def test_responses_string_input_records_protected_skip_reason() -> None:
-    callback = load_shim_callback()()
+    callback = load_adapter_callback()()
     data = {
         "model": "gpt-5.4-mini",
         "input": "live user text should stay intact",
@@ -1047,7 +1097,7 @@ def test_responses_string_input_records_protected_skip_reason() -> None:
 def test_pre_call_request_key_is_synced_to_litellm_logging_metadata() -> None:
     from types import SimpleNamespace
 
-    callback = load_shim_callback()()
+    callback = load_adapter_callback()()
     logging_obj = SimpleNamespace(
         litellm_params={"metadata": {}},
         model_call_details={"litellm_params": {"metadata": {}}},
@@ -1074,7 +1124,7 @@ def test_pre_call_request_key_is_synced_to_litellm_logging_metadata() -> None:
 
 
 def test_success_handler_captures_responses_input_without_pre_call(monkeypatch) -> None:
-    callback = load_shim_callback()(api_key=None)
+    callback = load_adapter_callback()(api_key=None)
     posted = {}
 
     async def fake_post_capture(capture, **kwargs):
@@ -1112,8 +1162,205 @@ def test_success_handler_captures_responses_input_without_pre_call(monkeypatch) 
     assert posted["kwargs"]["status"] == "succeeded"
 
 
+def test_capture_reads_proxy_correlation_from_litellm_metadata() -> None:
+    callback = load_adapter_callback()(api_key=None)
+
+    capture = callback._post_call_capture(
+        {
+            "model": "gpt-5.4-mini",
+            "input": [{"role": "user", "content": "responses payload"}],
+            "metadata": {
+                "request_id": "responses-metadata-correlation",
+                "x-llm-proxy-run": "run-from-metadata",
+                "x-llm-proxy-project": "project-from-metadata",
+                "x-llm-proxy-client": "codex",
+                "x-llm-proxy-compression": "ON",
+            },
+        }
+    )
+
+    assert capture is not None
+    assert capture.request_metadata["litellm_proxy_run_marker"] == "run-from-metadata"
+    assert capture.request_metadata["litellm_proxy_project"] == "project-from-metadata"
+    assert capture.request_metadata["litellm_proxy_client"] == "codex"
+    assert capture.request_metadata["litellm_proxy_compression_mode"] == "on"
+
+
+def test_capture_reads_proxy_correlation_from_responses_header_metadata() -> None:
+    callback = load_adapter_callback()(api_key=None)
+
+    capture = callback._post_call_capture(
+        {
+            "model": "gpt-5.4-mini",
+            "input": [{"role": "user", "content": "responses payload"}],
+            "metadata": {"request_id": "responses-litellm-metadata-headers"},
+            "litellm_metadata": {
+                "headers": {
+                    "X-LLM-Proxy-Run": "run-from-headers",
+                    "X-LLM-Proxy-Project": "project-from-headers",
+                    "X-LLM-Proxy-Client": "codex",
+                    "X-LLM-Proxy-Compression": "OFF",
+                    "Authorization": "Bearer secret-must-not-be-copied",
+                }
+            },
+        }
+    )
+
+    assert capture is not None
+    assert capture.request_metadata["litellm_proxy_run_marker"] == "run-from-headers"
+    assert capture.request_metadata["litellm_proxy_project"] == "project-from-headers"
+    assert capture.request_metadata["litellm_proxy_client"] == "codex"
+    assert capture.request_metadata["litellm_proxy_compression_mode"] == "off"
+    assert "Authorization" not in capture.request_metadata
+    assert "secret-must-not-be-copied" not in json.dumps(capture.request_metadata)
+
+
+def test_proxy_logging_success_waits_for_post_call_payload(monkeypatch) -> None:
+    callback = load_adapter_callback()(api_key=None)
+    posted = []
+
+    async def fake_post_capture(capture, **kwargs):
+        posted.append((capture, kwargs))
+
+    monkeypatch.setattr(callback, "_post_capture", fake_post_capture)
+    pre_call_data = {
+        "model": "gpt-5.4-mini",
+        "input": [{"role": "user", "content": "responses payload"}],
+        "metadata": {"request_id": "responses-proxy"},
+    }
+    capture = callback._post_call_capture(pre_call_data)
+    assert capture is not None
+    callback._remember(capture)
+
+    asyncio.run(
+        callback.async_success_handler(
+            kwargs={
+                "model": "gpt-5.4-mini",
+                "input": [{"role": "user", "content": "responses payload"}],
+                "litellm_params": {
+                    "proxy_server_request": {
+                        "headers": {"x-llm-proxy-run": "proxy-run"}
+                    }
+                },
+            },
+            response={"id": "response-id"},
+            start_time=datetime.now(UTC),
+            end_time=datetime.now(UTC),
+        )
+    )
+
+    assert posted == []
+    assert "responses-proxy" in callback._pending
+    assert (
+        callback._pending["responses-proxy"].request_metadata[
+            "litellm_proxy_run_marker"
+        ]
+        == "proxy-run"
+    )
+
+    asyncio.run(
+        callback.async_post_call_success_hook(
+            data={
+                "model": "gpt-5.4-mini",
+                "input": [{"role": "user", "content": "responses payload"}],
+                "metadata": {"request_id": "responses-proxy"},
+                "proxy_server_request": {
+                    "headers": {
+                        "x-llm-proxy-run": "proxy-run",
+                        "x-llm-proxy-project": "project-a",
+                        "x-llm-proxy-client": "codex",
+                    }
+                },
+            },
+            user_api_key_dict=None,
+            response={
+                "id": "response-id",
+                "usage": {
+                    "input_tokens": 12,
+                    "output_tokens": 3,
+                    "total_tokens": 15,
+                },
+            },
+        )
+    )
+
+    assert len(posted) == 1
+    posted_capture, posted_kwargs = posted[0]
+    assert posted_capture.request_metadata["litellm_proxy_run_marker"] == "proxy-run"
+    assert posted_capture.request_metadata["litellm_proxy_project"] == "project-a"
+    assert posted_capture.request_metadata["litellm_proxy_client"] == "codex"
+    assert posted_kwargs["status"] == "succeeded"
+
+
+def test_proxy_streaming_success_posts_final_responses_payload(monkeypatch) -> None:
+    callback = load_adapter_callback()(api_key=None)
+    posted = []
+
+    async def fake_post_capture(capture, **kwargs):
+        posted.append((capture, kwargs))
+
+    monkeypatch.setattr(callback, "_post_capture", fake_post_capture)
+    pre_call_data = {
+        "model": "gpt-5.5",
+        "input": "live user text should stay intact",
+        "stream": True,
+        "metadata": {"request_id": "responses-stream-proxy"},
+    }
+    capture = callback._post_call_capture(pre_call_data)
+    assert capture is not None
+    callback._remember(capture)
+
+    asyncio.run(
+        callback.async_success_handler(
+            kwargs={
+                "model": "gpt-5.5",
+                "input": "live user text should stay intact",
+                "stream": True,
+                "litellm_params": {
+                    "metadata": {
+                        "litellm_proxy_analytics_request_key": (
+                            "responses-stream-proxy"
+                        )
+                    },
+                    "proxy_server_request": {
+                        "headers": {
+                            "x-llm-proxy-run": "stream-proxy-run",
+                            "x-llm-proxy-project": "codex-proof",
+                            "x-llm-proxy-client": "codex",
+                        }
+                    },
+                },
+                "async_complete_streaming_response": {"id": "resp_stream"},
+                "standard_logging_object": {"stream": True},
+            },
+            response={
+                "id": "resp_stream",
+                "usage": {
+                    "input_tokens": 37,
+                    "output_tokens": 5,
+                    "total_tokens": 42,
+                    "input_tokens_details": {"cached_tokens": 20},
+                },
+            },
+            start_time=None,
+            end_time=None,
+        )
+    )
+
+    assert len(posted) == 1
+    posted_capture, posted_kwargs = posted[0]
+    assert "responses-stream-proxy" not in callback._pending
+    assert posted_capture.request_metadata["litellm_proxy_run_marker"] == (
+        "stream-proxy-run"
+    )
+    assert posted_capture.request_metadata["litellm_proxy_project"] == "codex-proof"
+    assert posted_capture.request_metadata["litellm_proxy_client"] == "codex"
+    assert posted_kwargs["status"] == "succeeded"
+    assert posted_kwargs["response"]["usage"]["input_tokens"] == 37
+
+
 def test_post_capture_bounds_long_responses_ids() -> None:
-    callback = load_shim_callback()(api_key=None)
+    callback = load_adapter_callback()(api_key=None)
     submitted = {}
 
     class FakeBuffer:
@@ -1156,7 +1403,7 @@ def test_post_capture_bounds_long_responses_ids() -> None:
 
 
 def test_post_capture_persists_litellm_call_id_on_provider_call() -> None:
-    callback = load_shim_callback()(api_key=None)
+    callback = load_adapter_callback()(api_key=None)
     submitted = {}
 
     class FakeBuffer:
@@ -1198,7 +1445,7 @@ def test_post_capture_persists_litellm_call_id_on_provider_call() -> None:
 
 
 def test_post_capture_keeps_provider_success_on_skipped_compression() -> None:
-    callback = load_shim_callback()(api_key=None)
+    callback = load_adapter_callback()(api_key=None)
     submitted = {}
 
     class FakeBuffer:
@@ -1271,7 +1518,7 @@ def test_responses_usage_mapping_reads_input_token_details_cache() -> None:
 
 
 def test_post_capture_persists_proxy_run_marker_request_metadata() -> None:
-    callback = load_shim_callback()(api_key=None)
+    callback = load_adapter_callback()(api_key=None)
     submitted = {}
 
     class FakeBuffer:
@@ -1287,10 +1534,10 @@ def test_post_capture_persists_proxy_run_marker_request_metadata() -> None:
             "metadata": {"request_id": "responses-marker"},
             "proxy_server_request": {
                 "headers": {
-                    "X-LiteLLM-Proxy-Run": "AGENT90-MARKER",
-                    "X-LiteLLM-Proxy-Project": "project%20name\n",
-                    "X-LiteLLM-Proxy-Client": "codex",
-                    "X-LiteLLM-Proxy-Ignored": "must-not-be-copied",
+                    "X-LLM-Proxy-Run": "AGENT90-MARKER",
+                    "X-LLM-Proxy-Project": "project%20name\n",
+                    "X-LLM-Proxy-Client": "codex",
+                    "X-LLM-Proxy-Ignored": "must-not-be-copied",
                     "Authorization": "Bearer secret-must-not-be-copied",
                 }
             },
@@ -1322,6 +1569,6 @@ def test_post_capture_persists_proxy_run_marker_request_metadata() -> None:
         "savings_profile": "agent-90",
     }
     assert "Authorization" not in command.request.metadata
-    assert "X-LiteLLM-Proxy-Ignored" not in command.request.metadata
+    assert "X-LLM-Proxy-Ignored" not in command.request.metadata
     assert "must-not-be-copied" not in json.dumps(command.request.metadata)
     assert "secret-must-not-be-copied" not in json.dumps(command.request.metadata)

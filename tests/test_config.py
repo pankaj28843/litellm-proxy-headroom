@@ -35,3 +35,10 @@ def test_litellm_config_keeps_internal_attribution_headers_local() -> None:
 
     general_settings = config.get("general_settings", {})
     assert general_settings.get("forward_client_headers_to_llm_api") is not True
+
+
+def test_litellm_config_keeps_spend_tags_to_openwebui_ids() -> None:
+    config = _litellm_config()
+
+    headers = config["litellm_settings"]["extra_spend_tag_headers"]
+    assert headers == ["x-openwebui-chat-id", "x-openwebui-message-id"]

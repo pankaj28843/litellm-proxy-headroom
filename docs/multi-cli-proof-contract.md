@@ -34,7 +34,7 @@ Every supported or route-tested CLI proof must record:
 
 | CLI | Status | Current proof |
 |---|---|---|
-| Codex CLI | `supported_useful` | Actual Codex CLI `gpt-5.5` practical series proved LiteLLM route usefulness after provider session-affinity/cache fixes. Cost remains unavailable when Codex JSON omits it. |
+| Codex CLI | `route_supported_not_useful` | Latest actual Codex CLI `gpt-5.5` direct-vs-proxy proof marker `codex-gpt55-proof-20260625T110709Z` showed proxy total `37055` versus direct total `37031`; cost remains unavailable when Codex JSON omits it. |
 | Claude Code | `route_gated` | Latest real `gpt-5.4-mini` Claude Code smoke marker `claude-smoke-currentroute-20260625T0202` reached LiteLLM as client `claude`, but the current ChatGPT-backed model group still fails with `System messages are not allowed` before provider-reported usage/cache/cost. |
 | OpenCode | `route_supported_cache_unproven` | Real `opencode run --format json` smoke, practical route proof, and same-route on/off `gpt-5.5` series routed through LiteLLM with marker-correlated provider rows. Normal mode used `1232` fewer total provider tokens than compression-off, but cached input was absent in both, observed cost was unavailable, and local compression saved `0` tokens. |
 | GitHub Copilot CLI | `route_supported_cache_unproven` | After upgrading Copilot CLI to `1.0.65`, `bin/copilot-litellm` still uses the documented local BYOK provider env vars to route through LiteLLM. A post-upgrade smoke and current three-call `gpt-5.5` practical series reached `/v1/responses`; the CLI still lacks a documented request-header surface, so proof remains time-window correlated and cached input/cost remain unavailable. |
@@ -53,11 +53,11 @@ disabled per request:
 - Pi: `PI_LITELLM_COMPRESSION_MODE=off`
 
 The wrappers normalize common disabled values to `off` and send
-`X-LiteLLM-Proxy-Compression: off`. The callback records
+`X-LLM-Proxy-Compression: off`. The callback records
 `litellm_proxy_compression_mode=off` and a skipped compression execution with
 reason `compression_disabled_by_proxy_header`, while still preserving route
-compatibility behavior and provider usage rows. This is a measurement baseline,
-not a default operating mode.
+behavior and provider usage rows. This is a measurement baseline, not a default
+operating mode.
 
 GitHub Copilot CLI does not currently document a local custom-header surface
 for BYOK provider requests. Copilot route proof therefore remains time-window
@@ -71,7 +71,7 @@ current support labels.
 
 | CLI | Marker/status | Evidence |
 |---|---|---|
-| Codex CLI | `supported_useful` for provider usage/cache; cost unavailable | `tmp/agent90-usefulness/agent90-codex-gpt55-clean-redeploy-20260624T080920Z/summary.json` shows proxy input `-3934`, total `-3916`, cache-ratio delta `+0.015170`, and cost `missing`. |
+| Codex CLI | `route_supported_not_useful`; cost unavailable | `~/plan-capsules/litellm-proxy-headroom/2026-06-25T101448+0200-phoenix-trace-metadata-economics-rework/after/direct-vs-proxy-codex/codex-gpt55-proof-20260625T110709Z/summary.json` shows proxy input `+24`, total `+24`, cache-ratio delta `+0.485380`, and cost `missing`. |
 | Claude Code | `route_gated` | `tmp/claude-route-proof/claude-smoke-currentroute-20260625T0202/proof.json` normalizes the latest real Claude Code smoke. Marker-correlated DB rows record two failed `/v1/chat/completions` requests for client `claude`, model `gpt-5.4-mini`, no provider-reported usage/cache/cost, and the CLI output reports `System messages are not allowed`. Earlier marker-attribution artifact: `tmp/claude-route-proof/claude-smoke-wrapperheaders-20260625T0320/stdout.jsonl`. |
 | OpenCode | `route_supported_cache_unproven` | `tmp/multi-cli-proof/opencode-compression-comparison-20260625T014154Z.json` compares matching real OpenCode practical series: normal marker `opencode-compression-on-20260625T014154Z` versus compression-off marker `opencode-compression-off-20260625T014015Z`. Normal aggregate: input `49964`, total `50297`, cached input absent. Compression-off aggregate: input `51084`, total `51529`, cached input absent. Normal mode used `1232` fewer total provider tokens, but cost remained unavailable and normal local compression saved `0` tokens. Earlier route proof: `tmp/multi-cli-proof/opencode-practical-20260624T1950/proof.json`. |
 | GitHub Copilot CLI | `route_supported_cache_unproven` | `tmp/copilot-route-proof/copilot-smoke-20260625T0150-upgrade/proof.json` normalizes the real post-upgrade `gpt-5.4-mini` smoke on Copilot CLI `1.0.65`; one `/v1/responses` provider row by time window, input `15735`, cached input `absent`, output `40`, reasoning `21`, total `15775`, cost `unavailable`. Current practical artifact: `tmp/copilot-route-proof/copilot-practical-20260625T020226Z/proof.json` from three real `gpt-5.5` Copilot CLI 1.0.65 BYOK runs; aggregate input `47216`, cached input `absent`, output `266`, reasoning `48`, total `47482`, cost `unavailable`. Earlier 1.0.64 practical artifact: `tmp/copilot-route-proof/copilot-practical-20260624T182754Z/proof.json`. |

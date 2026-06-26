@@ -8,7 +8,7 @@ import time
 import urllib.parse
 import uuid
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 from headroom.agent_savings import get_agent_savings_profile
@@ -46,10 +46,10 @@ logger = logging.getLogger(__name__)
 DEFAULT_SAVINGS_PROFILE = "agent-90"
 SAVINGS_PROFILE_ENV = "HEADROOM_SAVINGS_PROFILE"
 DEFAULT_MODEL = "claude-sonnet-4-5-20250929"
-PROXY_RUN_MARKER_HEADER = "x-litellm-proxy-run"
-PROXY_PROJECT_HEADER = "x-litellm-proxy-project"
-PROXY_CLIENT_HEADER = "x-litellm-proxy-client"
-PROXY_COMPRESSION_HEADER = "x-litellm-proxy-compression"
+PROXY_RUN_MARKER_HEADER = "x-llm-proxy-run"
+PROXY_PROJECT_HEADER = "x-llm-proxy-project"
+PROXY_CLIENT_HEADER = "x-llm-proxy-client"
+PROXY_COMPRESSION_HEADER = "x-llm-proxy-compression"
 ANALYTICS_RETRIEVAL_TOOL_NAME = "litellm_proxy_analytics_retrieve_chunk"
 RESPONSES_MIN_MUTABLE_BYTES = 512
 RESPONSES_OUTPUT_ITEM_TYPES = frozenset(
@@ -75,6 +75,9 @@ RESPONSES_TOOL_SCHEMA_DROP_KEYS = frozenset(
     }
 )
 RESPONSES_TOOL_SCHEMA_COMPACTION_ENV = "HEADROOM_RESPONSES_TOOL_SCHEMA_COMPACTION"
+RESPONSES_MUTABLE_OUTPUT_COMPRESSION_ENV = (
+    "HEADROOM_RESPONSES_MUTABLE_OUTPUT_COMPRESSION"
+)
 RESPONSES_DROP_CODEX_PROMPT_CACHE_KEY_ENV = (
     "HEADROOM_RESPONSES_DROP_CODEX_PROMPT_CACHE_KEY"
 )
@@ -158,6 +161,7 @@ class CompressionCapture:
     attempted_input_tokens: int | None
     started_at_ms: int
     ccr_hash: str
+    ccr_hashes: tuple[str, ...]
     content_hash: str
     cache_hot_zone: dict[str, Any] | None
     trace: TraceContextCommand
@@ -256,10 +260,55 @@ def _proxy_request_headers(data: dict[str, Any]) -> dict[str, Any]:
         litellm_params = data.get("litellm_params")
         if isinstance(litellm_params, dict):
             proxy_request = litellm_params.get("proxy_server_request")
-    if not isinstance(proxy_request, dict):
-        return {}
-    headers = proxy_request.get("headers")
-    return headers if isinstance(headers, dict) else {}
+    if isinstance(proxy_request, dict):
+        headers = proxy_request.get("headers")
+        if isinstance(headers, dict):
+            return headers
+
+    for metadata in _candidate_metadata_maps(data):
+        headers = metadata.get("headers")
+        if isinstance(headers, dict):
+            return headers
+    return {}
+
+
+def _candidate_metadata_maps(data: dict[str, Any]) -> tuple[dict[str, Any], ...]:
+    maps: list[dict[str, Any]] = []
+    for key in ("metadata", "litellm_metadata"):
+        value = data.get(key)
+        if isinstance(value, dict):
+            maps.append(value)
+
+    litellm_params = data.get("litellm_params")
+    if isinstance(litellm_params, dict):
+        metadata = litellm_params.get("metadata")
+        if isinstance(metadata, dict):
+            maps.append(metadata)
+    return tuple(maps)
+
+
+def _is_proxy_logging_payload(data: dict[str, Any]) -> bool:
+    if data.get("proxy_server_request") is not None:
+        return True
+    litellm_params = data.get("litellm_params")
+    return isinstance(litellm_params, dict) and (
+        litellm_params.get("proxy_server_request") is not None
+    )
+
+
+def _is_final_stream_success_logging_payload(data: dict[str, Any]) -> bool:
+    if data.get("stream") is not True:
+        return False
+    if (
+        data.get("async_complete_streaming_response") is not None
+        or data.get("complete_streaming_response") is not None
+    ):
+        return True
+    standard_logging_object = data.get("standard_logging_object")
+    return (
+        isinstance(standard_logging_object, dict)
+        and standard_logging_object.get("stream") is True
+    )
 
 
 def _header_value(headers: dict[str, Any], header_name: str) -> str | None:
@@ -286,34 +335,65 @@ def _env_flag_enabled(name: str, *, default: bool = False) -> bool:
 def _request_metadata_from_data(
     data: dict[str, Any], savings_profile: str
 ) -> dict[str, Any]:
+    source_metadata = _metadata(data)
+    headers = _proxy_request_headers(data)
     metadata: dict[str, Any] = {
         "integration": "litellm-responses"
         if data.get("input") is not None and data.get("messages") is None
         else "litellm-chat",
         "savings_profile": savings_profile,
     }
-    marker = _header_value(_proxy_request_headers(data), PROXY_RUN_MARKER_HEADER)
+    marker = _header_value(headers, PROXY_RUN_MARKER_HEADER) or _metadata_value(
+        source_metadata,
+        "litellm_proxy_run_marker",
+        PROXY_RUN_MARKER_HEADER,
+    )
     if marker:
         metadata["litellm_proxy_run_marker"] = _bounded_identifier(marker, "run")
     project = _sanitized_metadata_text(
-        _header_value(_proxy_request_headers(data), PROXY_PROJECT_HEADER)
+        _header_value(headers, PROXY_PROJECT_HEADER)
+        or _metadata_value(
+            source_metadata,
+            "litellm_proxy_project",
+            PROXY_PROJECT_HEADER,
+        )
     )
     if project:
         metadata["litellm_proxy_project"] = project
     client = _sanitized_metadata_text(
-        _header_value(_proxy_request_headers(data), PROXY_CLIENT_HEADER),
+        _header_value(headers, PROXY_CLIENT_HEADER)
+        or _metadata_value(
+            source_metadata,
+            "litellm_proxy_client",
+            PROXY_CLIENT_HEADER,
+        ),
         max_length=64,
     )
     if client:
         metadata["litellm_proxy_client"] = client
-    compression_mode = _compression_mode_from_data(data)
+    compression_mode = _compression_mode_from_data(data) or _sanitized_metadata_text(
+        _metadata_value(
+            source_metadata,
+            "litellm_proxy_compression_mode",
+            PROXY_COMPRESSION_HEADER,
+        ),
+        max_length=32,
+    )
     if compression_mode:
-        metadata["litellm_proxy_compression_mode"] = compression_mode
+        metadata["litellm_proxy_compression_mode"] = compression_mode.lower()
     affinity_hash = _provider_session_affinity_hash(data)
     if affinity_hash:
         metadata["provider_session_affinity_source"] = "prompt_cache_key"
         metadata["provider_session_affinity_hash"] = affinity_hash
     return metadata
+
+
+def _metadata_value(metadata: dict[str, Any], *keys: str) -> str | None:
+    wanted = {key.lower().replace("-", "_") for key in keys}
+    for key, value in metadata.items():
+        if str(key).lower().replace("-", "_") in wanted and value:
+            return str(value)
+    return None
 
 
 def _proxy_client_from_data(data: dict[str, Any]) -> str | None:
@@ -1137,6 +1217,42 @@ class HeadroomAnalyticsCallback(_HeadroomLiteLLMCallback, CustomLogger):
                 "responses_units_attempted": 0,
                 "responses_units_modified": 0,
             }
+        if not _env_flag_enabled(RESPONSES_MUTABLE_OUTPUT_COMPRESSION_ENV):
+            if tool_compaction is not None:
+                return {
+                    "messages": None,
+                    "tokens_before": tool_compaction.tools_before_tokens,
+                    "tokens_after": tool_compaction.tools_after_tokens,
+                    "tokens_saved": tool_compaction.tokens_saved,
+                    "compression_ratio": tool_compaction.tokens_saved
+                    / tool_compaction.tools_before_tokens
+                    if tool_compaction.tools_before_tokens > 0
+                    else 0.0,
+                    "transforms_applied": list(dict.fromkeys(transforms_applied)),
+                    "savings_profile": self._savings_profile,
+                    "skip_reason": None,
+                    "attempted_input_tokens": tool_compaction.tools_before_tokens,
+                    "responses_units_attempted": 0,
+                    "responses_units_modified": 0,
+                    "tool_schema_bytes_before": tool_compaction.tools_before_bytes,
+                    "tool_schema_bytes_after": tool_compaction.tools_after_bytes,
+                }
+            return {
+                "messages": None,
+                "tokens_before": None,
+                "tokens_after": None,
+                "tokens_saved": None,
+                "compression_ratio": None,
+                "transforms_applied": list(dict.fromkeys(transforms_applied)),
+                "savings_profile": self._savings_profile,
+                "skip_reason": (
+                    "responses_mutable_output_compression_disabled_no_positive_"
+                    "provider_proof"
+                ),
+                "attempted_input_tokens": 0,
+                "responses_units_attempted": 0,
+                "responses_units_modified": 0,
+            }
 
         replacements: list[tuple[int, str]] = []
         tokens_before = tool_compaction.tools_before_tokens if tool_compaction else 0
@@ -1334,11 +1450,17 @@ class HeadroomAnalyticsCallback(_HeadroomLiteLLMCallback, CustomLogger):
         await _HeadroomLiteLLMCallback.async_success_handler(
             self, kwargs, response, start_time, end_time
         )
+        if _is_proxy_logging_payload(
+            kwargs
+        ) and not _is_final_stream_success_logging_payload(kwargs):
+            self._enrich_pending_capture(kwargs)
+            return
         capture = self._pop_capture(kwargs)
         if capture is None:
             capture = self._post_call_capture(kwargs)
         if capture is None:
             return
+        capture = self._capture_with_current_request_context(capture, kwargs)
         await self._post_capture(
             capture,
             response=response,
@@ -1356,11 +1478,15 @@ class HeadroomAnalyticsCallback(_HeadroomLiteLLMCallback, CustomLogger):
         await _HeadroomLiteLLMCallback.async_failure_handler(
             self, kwargs, response, start_time, end_time
         )
+        if _is_proxy_logging_payload(kwargs):
+            self._enrich_pending_capture(kwargs)
+            return
         capture = self._pop_capture(kwargs)
         if capture is None:
             capture = self._post_call_capture(kwargs)
         if capture is None:
             return
+        capture = self._capture_with_current_request_context(capture, kwargs)
         await self._post_capture(
             capture,
             response=response,
@@ -1381,6 +1507,7 @@ class HeadroomAnalyticsCallback(_HeadroomLiteLLMCallback, CustomLogger):
             capture = self._post_call_capture(data)
         if capture is None:
             return None
+        capture = self._capture_with_current_request_context(capture, data)
         await self._post_capture(
             capture,
             response=response,
@@ -1402,6 +1529,7 @@ class HeadroomAnalyticsCallback(_HeadroomLiteLLMCallback, CustomLogger):
             capture = self._post_call_capture(request_data)
         if capture is None:
             return None
+        capture = self._capture_with_current_request_context(capture, request_data)
         await self._post_capture(
             capture,
             response=None,
@@ -1445,6 +1573,42 @@ class HeadroomAnalyticsCallback(_HeadroomLiteLLMCallback, CustomLogger):
         del call_type
         return kwargs, result
 
+    def _capture_with_current_request_context(
+        self,
+        capture: CompressionCapture,
+        data: dict[str, Any],
+    ) -> CompressionCapture:
+        request_metadata = dict(capture.request_metadata)
+        request_metadata.update(
+            _request_metadata_from_data(data, self._savings_profile)
+        )
+        trace = trace_context_from_litellm_payload(data)
+        if not (
+            trace.traceparent or trace.trace_id or trace.span_id or trace.tracestate
+        ):
+            trace = capture.trace
+        return replace(
+            capture,
+            litellm_call_id=_litellm_call_id_from_data(data) or capture.litellm_call_id,
+            incoming_route=_incoming_route_from_data(data) or capture.incoming_route,
+            request_metadata=request_metadata,
+            trace=trace,
+        )
+
+    def _enrich_pending_capture(self, data: dict[str, Any]) -> None:
+        pending_key: str | None = None
+        request_key = _metadata(data).get("litellm_proxy_analytics_request_key")
+        if request_key and str(request_key) in self._pending:
+            pending_key = str(request_key)
+        elif len(self._pending) == 1:
+            pending_key = next(iter(self._pending))
+        if pending_key is None:
+            return
+        self._pending[pending_key] = self._capture_with_current_request_context(
+            self._pending[pending_key],
+            data,
+        )
+
     def _compression_capture(
         self,
         request_key: str,
@@ -1478,6 +1642,13 @@ class HeadroomAnalyticsCallback(_HeadroomLiteLLMCallback, CustomLogger):
             attempted_input_tokens = headroom_result.get("attempted_input_tokens")
             if skip_reason:
                 compression_status = "skipped"
+        raw_ccr_hashes = (
+            headroom_result.get("ccr_hashes")
+            if isinstance(headroom_result, dict)
+            else None
+        )
+        if not isinstance(raw_ccr_hashes, (list, tuple, set, frozenset)):
+            raw_ccr_hashes = []
 
         return CompressionCapture(
             request_key=request_key,
@@ -1496,6 +1667,7 @@ class HeadroomAnalyticsCallback(_HeadroomLiteLLMCallback, CustomLogger):
             attempted_input_tokens=attempted_input_tokens,
             started_at_ms=int(time.time() * 1000),
             ccr_hash=ccr_hash,
+            ccr_hashes=tuple(str(value) for value in raw_ccr_hashes if value),
             content_hash=content_hash,
             cache_hot_zone=responses_cache_hot_zone_fingerprint(data)
             if data.get("input") is not None and data.get("messages") is None
@@ -1560,6 +1732,8 @@ class HeadroomAnalyticsCallback(_HeadroomLiteLLMCallback, CustomLogger):
         idempotency_key = response_key or capture.content_hash
         execution_status = capture.compression_status or status
         transforms: dict[str, Any] = {"applied": capture.transforms_applied}
+        if capture.ccr_hashes:
+            transforms["ccr_hashes"] = list(capture.ccr_hashes)
         if capture.skip_reason:
             transforms["skip_reason"] = capture.skip_reason
         if capture.attempted_input_tokens is not None:
@@ -1635,6 +1809,11 @@ class HeadroomAnalyticsCallback(_HeadroomLiteLLMCallback, CustomLogger):
                 )
             ],
             provider_calls=[provider_call] if provider_call is not None else [],
+        )
+        get_analytics_telemetry().record_compression_story(
+            command,
+            success=status == "succeeded",
+            latency_ms=duration_ms,
         )
         if not buffer.submit_nowait(command):
             logger.debug("analytics buffer rejected %s", capture.request_key)

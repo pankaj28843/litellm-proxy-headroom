@@ -91,13 +91,13 @@ def merge_custom_headers(
     cleaned_client = header_value(client) or "claude"
     cleaned_project = header_value(project)
     cleaned_marker = header_value(marker)
-    headers.append(f"X-LiteLLM-Proxy-Client: {cleaned_client}")
+    headers.append(f"X-LLM-Proxy-Client: {cleaned_client}")
     if cleaned_project:
-        headers.append(f"X-LiteLLM-Proxy-Project: {cleaned_project}")
+        headers.append(f"X-LLM-Proxy-Project: {cleaned_project}")
     if cleaned_marker:
-        headers.append(f"X-LiteLLM-Proxy-Run: {cleaned_marker}")
+        headers.append(f"X-LLM-Proxy-Run: {cleaned_marker}")
     if compression_mode:
-        headers.append(f"X-LiteLLM-Proxy-Compression: {compression_mode}")
+        headers.append(f"X-LLM-Proxy-Compression: {compression_mode}")
     os.environ["ANTHROPIC_CUSTOM_HEADERS"] = "\n".join(headers)
 
 

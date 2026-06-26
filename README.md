@@ -15,7 +15,7 @@ uv run litellm --config config/litellm.yaml --host 127.0.0.1 --port 4000
 ```
 
 The LiteLLM config uses ChatGPT's `chatgpt/` provider route and a config-local
-callback shim, `config/headroom_litellm_callback.py`, which imports Headroom
+callback adapter, `config/headroom_litellm_callback.py`, which imports Headroom
 library code for compression and posts analytics to the custom backend.
 On a machine without existing ChatGPT device credentials, LiteLLM prompts for
 the ChatGPT OAuth device flow during startup.
@@ -70,7 +70,7 @@ Smoke the backend ingress/retrieval/stats/metrics path:
 uv run python scripts/e2e_analytics_smoke.py
 ```
 
-Smoke the CCR compatibility contract used by the imported compression library:
+Smoke the CCR adapter contract used by the imported compression library:
 
 ```bash
 HEADROOM_ANALYTICS_URL=http://127.0.0.1:8010 \
@@ -119,8 +119,8 @@ uv run python scripts/e2e_simulation_smoke.py
 
 The analytics package is split into a framework-free domain layer,
 application commands, and PostgreSQL adapters under
-`src/litellm_proxy_headroom/analytics/`. API, LiteLLM callback, CCR
-compatibility, and OTel adapters are layered around those modules.
+`src/litellm_proxy_headroom/analytics/`. API, LiteLLM callback, CCR, and OTel
+adapters are layered around those modules.
 
 Imported library code can use the analytics backend through the plugin entry
 point when a path needs the `CompressionStoreBackend` protocol:
@@ -161,7 +161,7 @@ http://127.0.0.1:8010/mcp/
 
 CCR marker retrieval stays on the local analytics path. Imported compression
 library code writes stored chunks through the `HEADROOM_CCR_BACKEND` entry
-point and the bounded `/headroom/ccr` compatibility routes; agents retrieve
+point and the bounded `/headroom/ccr` adapter routes; agents retrieve
 marker hashes through the custom MCP tool
 `mcp__analytics__litellm_proxy_analytics_retrieve_chunk`. The repo-owned
 wrappers register only this analytics MCP endpoint.
@@ -210,12 +210,13 @@ Read the numbers as recomputed source-row totals, not cached dashboard state:
   provider token usage rows and are separate from compression savings.
 - Provider cache hit comes from provider-reported `cached_input_tokens` divided
   by provider-reported input tokens. This is different from backend cache-event
-  counts and is the signal for API billing-equivalent savings.
-- `Combined saving` uses billing-equivalent input:
+  counts and feeds a billing-equivalent input estimate.
+- Billing-equivalent input uses:
   `uncached_provider_input + cached_provider_input * cached_input_multiplier`,
-  compared with estimated-before input tokens. The default cached-input
-  multiplier is `0.10` for the current OpenAI GPT-5.x text cached-input
-  pricing ratio as of 2026-06-23 and can be overridden with
+  compared with estimated-before input tokens. This is a one-sided diagnostic,
+  not proof of provider-credit savings or usable capacity. The default
+  cached-input multiplier is `0.10` for the current OpenAI GPT-5.x text
+  cached-input pricing ratio as of 2026-06-23 and can be overridden with
   `ANALYTICS_CACHED_INPUT_COST_MULTIPLIER` when the provider, tier, or pricing
   changes.
 - `negative_savings_executions` counts executions where compression expanded
@@ -223,8 +224,9 @@ Read the numbers as recomputed source-row totals, not cached dashboard state:
   measured cost exceeded the estimated baseline.
 - Dashboard cost fields compare `provider_calls.cost_total` with estimated
   rows in `cost_calculations`; missing provider cost stays `null` rather than
-  becoming a fake zero-dollar value.
-- Primary-usefulness status is separate from the one-sided value metrics. A
+  becoming a fake zero-dollar value. The estimated delta is diagnostic until
+  direct-vs-proxy proof exists.
+- Primary-usefulness status is separate from the one-sided diagnostics. A
   useful result requires a direct-vs-proxy Codex CLI proof using aggregate
   provider usage/cost and cache hit across the whole Codex turn/provider-call
   sequence.
@@ -299,16 +301,16 @@ Current support levels are maintained in
 [docs/agent-cli-support.md](docs/agent-cli-support.md), and the shared
 provider-row proof schema is in
 [docs/multi-cli-proof-contract.md](docs/multi-cli-proof-contract.md). Short
-version: Codex is the proven useful path, Claude Code is still route-gated on
-the current ChatGPT-backed `gpt-5.x` deployment, OpenCode
-routes through LiteLLM but still has no cache-usefulness proof after the latest
-on/off practical comparison, GitHub Copilot CLI routes through LiteLLM BYOK
-after upgrading to Copilot CLI 1.0.65 and a current three-call `gpt-5.5`
-practical series, but remains time-window/cache-unproven,
-and Pi
-routes through LiteLLM after upgrading to Pi 0.80.2 but is not useful on the
-latest `agent-90` versus compression-off practical proof. Do not claim
-non-Codex cache/cost savings without an aggregate practical proof.
+version: Codex routes through LiteLLM but the latest direct-vs-proxy `gpt-5.5`
+proof is not useful, Claude Code is still route-gated on the current
+ChatGPT-backed `gpt-5.x` deployment, OpenCode routes through LiteLLM but still
+has no cache-usefulness proof after the latest on/off practical comparison,
+GitHub Copilot CLI routes through LiteLLM BYOK after upgrading to Copilot CLI
+1.0.65 and a current three-call `gpt-5.5` practical series, but remains
+time-window/cache-unproven, and Pi routes through LiteLLM after upgrading to Pi
+0.80.2 but is not useful on the latest `agent-90` versus compression-off
+practical proof. Do not claim cache/cost savings without an aggregate practical
+proof.
 
 `bin/codex-litellm` sets `CODEX_HOME` to the managed `~/.codex-headroom`
 directory, writes `config.toml` and `litellm.config.toml`, symlinks native
@@ -318,9 +320,9 @@ analytics MCP endpoint for local compression-marker retrieval. The wrapper refus
 `CODEX_LITELLM_HOME=$HOME/.codex` by default because it does not own Headroom's
 snapshot/unwrap machinery for mutating a user's native Codex config; choose an
 isolated directory instead. It also maps `CODEX_LITELLM_PROJECT` to
-`X-LiteLLM-Proxy-Project` for local analytics attribution, defaulting the value
+`X-LLM-Proxy-Project` for local analytics attribution, defaulting the value
 from the launch directory name when unset. It maps `CODEX_LITELLM_CLIENT` to
-`X-LiteLLM-Proxy-Client` for local analytics attribution, defaulting to
+`X-LLM-Proxy-Client` for local analytics attribution, defaulting to
 `codex`. The wrapper refuses custom Codex `--profile` values by default
 because they can bypass the generated LiteLLM provider; omit `--profile`, use
 `--profile litellm`, or set
@@ -340,7 +342,7 @@ base URL used by both `OPENAI_BASE_URL` and the generated Codex provider. Set
 `models.json` with a custom `litellm` provider using the OpenAI Responses API,
 and maps `PI_LITELLM_MODEL` plus `PI_LITELLM_SMALL_MODEL` to generated model
 entries. The generated config references `LITELLM_MASTER_KEY` as an environment
-variable and sends local `X-LiteLLM-Proxy-*` attribution headers through Pi's
+variable and sends local `X-LLM-Proxy-*` attribution headers through Pi's
 documented custom-provider header config. The wrapper defaults to `gpt-5.5`;
 use `PI_LITELLM_MODEL=gpt-5.4-mini` only for smoke routing. Latest Pi
 practical proof compared normal `agent-90` with
@@ -353,12 +355,13 @@ still unavailable.
 limits settings to project scope so user `apiKeyHelper` config does not bypass
 LiteLLM, and writes a generated analytics MCP config under `~/.claude-headroom`
 by default. Set `CLAUDE_LITELLM_HOME` to move that managed home, or
-`CLAUDE_LITELLM_STATE_DIR` for compatibility with earlier wrapper tests/scripts.
+`CLAUDE_LITELLM_STATE_DIR` to override the generated state directory in
+wrapper tests/scripts.
 Set `CLAUDE_LITELLM_BASE_URL` when LiteLLM is not on `http://127.0.0.1:4000`,
 and `CLAUDE_LITELLM_ANALYTICS_URL` when analytics is not on
 `http://127.0.0.1:8010`. The wrapper also appends local
-`X-LiteLLM-Proxy-Client`, `X-LiteLLM-Proxy-Project`, and optional
-`X-LiteLLM-Proxy-Run` headers through Claude Code's `ANTHROPIC_CUSTOM_HEADERS`
+`X-LLM-Proxy-Client`, `X-LLM-Proxy-Project`, and optional
+`X-LLM-Proxy-Run` headers through Claude Code's `ANTHROPIC_CUSTOM_HEADERS`
 surface for analytics correlation. It preserves existing custom headers and
 does not write them to generated files. The wrapper validates URLs before
 writing managed config and never writes `LITELLM_MASTER_KEY` into `mcp.json`.
@@ -403,7 +406,7 @@ not claimed.
 
 For marker-capable wrappers, use `*_LITELLM_COMPRESSION_MODE=off` only as a
 proof baseline. Codex, Claude Code, OpenCode, and Pi normalize that setting to
-`X-LiteLLM-Proxy-Compression: off`; the callback records
+`X-LLM-Proxy-Compression: off`; the callback records
 `litellm_proxy_compression_mode=off`, skips Headroom compression transforms,
 and still records provider usage rows for aggregate comparison. Copilot CLI is
 excluded because its documented BYOK surface does not expose local request
@@ -502,12 +505,12 @@ even when both Codex lanes and the DB query succeed. With `--query-db`, the
 proxy lane also writes `db-proof.sql`,
 `db-proof.stdout.txt`, `db-proof.stderr.txt`, and `db-proof-result.json`. The
 proxy lane sets `LITELLM_PROXY_RUN_MARKER=<marker>`; `bin/codex-litellm` maps
-that opt-in value to `X-LiteLLM-Proxy-Run`; it also sends
-`X-LiteLLM-Proxy-Project` from `CODEX_LITELLM_PROJECT`. Analytics persists
+that opt-in value to `X-LLM-Proxy-Run`; it also sends
+`X-LLM-Proxy-Project` from `CODEX_LITELLM_PROJECT`. Analytics persists
 those as `request_metadata.litellm_proxy_run_marker` and
 `request_metadata.litellm_proxy_project` for DB correlation. The proxy lane
 also sets `CODEX_LITELLM_CLIENT=codex`; the wrapper sends it as
-`X-LiteLLM-Proxy-Client`, and analytics persists
+`X-LLM-Proxy-Client`, and analytics persists
 `request_metadata.litellm_proxy_client` for proof grouping. The DB query uses
 the run marker when present and falls back to the proxy lane time window plus
 `--db-window-grace-seconds` for buffered ingestion. A proxy DB proof row is
@@ -517,9 +520,8 @@ Codex reports it.
 
 Keep LiteLLM `general_settings.forward_client_headers_to_llm_api` disabled in
 this deployment. LiteLLM forwards arbitrary `x-*` request headers upstream when
-that setting is enabled, while `X-LiteLLM-Proxy-Run` and
-`X-LiteLLM-Proxy-Project` and `X-LiteLLM-Proxy-Client` are local analytics
-attribution headers.
+that setting is enabled, while `X-LLM-Proxy-Run`, `X-LLM-Proxy-Project`, and
+`X-LLM-Proxy-Client` are local analytics attribution headers.
 
 Version/source-surface: TechDocs tenants `openai-codex-docs` from
 <https://developers.openai.com>, `litellm` from <https://docs.litellm.ai>, and
@@ -546,24 +548,32 @@ The compose stack sends LiteLLM OTel v2 traces to Phoenix using the
 `arize_phoenix` callback and keeps prompt/response capture disabled with
 `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=no_content`. Open WebUI is
 configured to forward OpenAI-compatible requests directly to the owned LiteLLM
-service. The analytics backend sends traces to Phoenix when OTel is enabled and
-continues to expose `/dashboard`, `/health`, `/ready`, `/stats`, `/metrics`,
-`/stats/dashboard`, `/records/compression`, `/simulations/runs`, and `/mcp/`
-independently.
+service, but its own OTel exporter is disabled so routine UI health checks and
+sqlite connection spans do not pollute Phoenix. The analytics backend sends
+traces to Phoenix when OTel is enabled and continues to expose `/dashboard`,
+`/health`, `/ready`, `/stats`, `/metrics`, `/stats/dashboard`,
+`/records/compression`, `/simulations/runs`, and `/mcp/` independently.
 
 ## Compression Library Callback Boundary
 
 The LiteLLM config uses `config/headroom_litellm_callback.py` as a small
-Headroom v0.27.0 compatibility shim. It keeps LiteLLM's class callback loading
-working and selects Headroom's built-in `HEADROOM_SAVINGS_PROFILE`, defaulting
-to `agent-90` for local compression. The default stack leaves
+callback adapter. It implements LiteLLM's class callback loading surface and
+selects Headroom's built-in `HEADROOM_SAVINGS_PROFILE`, defaulting to
+`agent-90` for local compression. The default stack leaves
 `HEADROOM_API_KEY` unset, so no extra profile-specific environment variable is
 required.
 
-This callback shim is the entire Headroom boundary. Do not add Headroom
+Responses tool-output mutation is disabled by default with
+`HEADROOM_RESPONSES_MUTABLE_OUTPUT_COMPRESSION=false`. The latest practical
+`gpt-5.5` direct-vs-proxy Codex proof showed the proxy used more
+provider-reported total tokens despite a local token delta, so the callback now
+records a skipped execution and still captures provider/cache/Phoenix metadata
+unless that mutation is explicitly enabled for a fresh experiment.
+
+This callback adapter is the entire Headroom boundary. Do not add Headroom
 CLI/proxy/MCP or dashboard workflows to this repository; add only local adapter
-code that imports documented library surfaces needed by LiteLLM or CCR
-compatibility.
+code that imports documented library surfaces needed by LiteLLM or the CCR
+adapter.
 
 ## Codex Models
 

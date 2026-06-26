@@ -22,6 +22,7 @@ def test_compose_wires_litellm_to_persistent_chatgpt_auth_and_phoenix() -> None:
         litellm["environment"]["PHOENIX_COLLECTOR_HTTP_ENDPOINT"]
         == "http://phoenix:6006/v1/traces"
     )
+    assert litellm["environment"]["OTEL_SPAN_ATTRIBUTE_COUNT_LIMIT"] == "512"
     assert (
         litellm["environment"]["OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT"]
         == "no_content"
@@ -73,14 +74,14 @@ def test_compose_keeps_user_facing_services_bound_to_localhost() -> None:
     assert "127.0.0.1:8080:8080" in services["open-webui"]["ports"]
 
 
-def test_compose_configures_openwebui_for_litellm_and_otel() -> None:
+def test_compose_configures_openwebui_for_litellm_without_tracing_noise() -> None:
     open_webui = _compose()["services"]["open-webui"]["environment"]
 
     assert open_webui["OPENAI_API_BASE_URL"] == "http://litellm:4000/v1"
     assert open_webui["ENABLE_FORWARD_USER_INFO_HEADERS"] == "true"
-    assert open_webui["ENABLE_OTEL"] == "true"
-    assert open_webui["ENABLE_OTEL_TRACES"] == "true"
-    assert open_webui["OTEL_EXPORTER_OTLP_ENDPOINT"] == "http://phoenix:4317"
+    assert open_webui["ENABLE_OTEL"] == "false"
+    assert "ENABLE_OTEL_TRACES" not in open_webui
+    assert "OTEL_EXPORTER_OTLP_ENDPOINT" not in open_webui
 
 
 def test_compose_runs_custom_analytics_backend_as_ingress() -> None:
@@ -99,3 +100,4 @@ def test_compose_runs_custom_analytics_backend_as_ingress() -> None:
     assert backend["environment"]["OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"] == (
         "http://phoenix:6006/v1/traces"
     )
+    assert "LITELLM_PROXY_ANALYTICS_OTEL_EXCLUDED_URLS" in backend["environment"]

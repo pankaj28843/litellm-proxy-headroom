@@ -89,7 +89,8 @@ Important local variables:
 | `HEADROOM_CCR_ANALYTICS_TIMEOUT_SECONDS` | Timeout for the CCR adapter HTTP backend. |
 | `HEADROOM_CCR_LOCAL_CACHE_ENTRIES` | Per-process CCR read-through cache limit. |
 | `HEADROOM_CCR_TENANT_PREFIX` | Optional tenant prefix for CCR backend metadata. |
-| `HEADROOM_RESPONSES_MUTABLE_OUTPUT_COMPRESSION` | Opt-in gate for mutating OpenAI Responses tool-output units. Defaults to `false` because the latest `gpt-5.5` direct-vs-proxy proof was provider-token negative; leave disabled unless a fresh aggregate proof supports it. |
+| `HEADROOM_RESPONSES_CHATGPT_PROVIDER_PASSTHROUGH` | Optional override for preserving cache-sensitive Responses fields through LiteLLM's ChatGPT adapter. When unset, Codex Responses calls preserve fields such as `model`, `prompt_cache_key`, `client_metadata`, `service_tier`, `parallel_tool_calls`, and `text` by default. Set to `false` only for explicit field-drop diagnostics; `codex-savings-passthrough-off-20260626T130210Z` showed this is not a savings fix because LiteLLM outbound MITM removed `client_metadata` and `prompt_cache_key` and provider/cache diagnostics failed. |
+| `HEADROOM_RESPONSES_MUTABLE_OUTPUT_COMPRESSION` | Opt-in gate for mutating OpenAI Responses tool-output units. Defaults to `false`; latest mutable-on 12-turn account-bracketed `gpt-5.5` direct-vs-proxy proof `codex-savings-direct-first-20260626T142720Z` passed account shareability as `proxy_not_worse` and provider/cache diagnostics, with `189,504` local tokens saved. Keep this explicit until the experiment mode is intentionally promoted. |
 | `HEADROOM_ANALYTICS_OTEL_ENABLED` | Enables backend tracing and metrics setup. |
 | `HEADROOM_ANALYTICS_OTEL_CONSOLE` | Emits spans/metrics to logs for local proof. |
 | `HEADROOM_ANALYTICS_OTEL_METRIC_EXPORT_INTERVAL_MS` | OTel metric export interval. |
@@ -360,13 +361,22 @@ For analytics plumbing changes, prove runtime behavior before unit tests:
 8. Only then run `uv run pytest`, Ruff, and migration downgrade/upgrade.
 
 For compression usefulness claims, the smoke suite and dashboard stats are not
-enough. Use the README's Agent-90 Usefulness Harness with actual
-`codex exec --json` direct-vs-proxy runs. Smoke with `gpt-5.4-mini`; judge
-practical usefulness with `gpt-5.5`; compare aggregate provider-reported usage,
-cost when Codex reports it, and cached-input behavior across the whole Codex
-turn/provider-call sequence. When Codex exposes no observed lane cost, mark
-cost unavailable and unestimated rather than deriving dollars from local
-pricing tables.
+enough. Use actual `codex exec --json` direct-vs-proxy runs and bracket Codex
+lanes with first-party account snapshots from
+`python3 scripts/codex_account_snapshot.py`, which uses `codex app-server
+--stdio` JSON-RPC `account/rateLimits/read` and `account/usage/read`. Smoke
+with `gpt-5.4-mini`; judge practical usefulness with `gpt-5.5`; compare
+five-hour quota, weekly quota, credits, reset credits, and account token
+activity first.
+Current Codex practical proof must use 8-12 resumed `gpt-5.5` user-message
+turns per lane through `scripts/e2e_agent90_usefulness.py`, yolo-equivalent
+execution mode on both lanes, and
+`minimum_input_token_floor.ok=true` for at least `1,000,000` combined
+direct-plus-wrapper input tokens.
+Then use aggregate provider-reported usage, cached-input behavior, and cost
+when Codex reports it across the whole Codex turn/provider-call sequence as
+diagnostics. When Codex exposes no observed lane cost, mark cost unavailable
+and unestimated rather than deriving dollars from local pricing tables.
 
 The synthetic smoke suite is:
 

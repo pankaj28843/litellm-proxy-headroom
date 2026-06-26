@@ -149,6 +149,10 @@ HEADROOM_ANALYTICS_SHUTDOWN_TIMEOUT_SECONDS=2.0
 For repeatable evidence gathering across the backend, Compose logs, PostgreSQL,
 metrics, and Phoenix, use
 [docs/analytics-observability-evidence.md](docs/analytics-observability-evidence.md).
+For full-fidelity local CLI request/response forensics with mitmproxy, use
+[docs/harness-engineering.md](docs/harness-engineering.md). MITM is the harness
+sensor for "what did the CLI actually send?" claims; account-bracketed Codex
+proof remains the primary usefulness signal.
 For backend setup, configuration, data flow, retention, extension points, and
 operational trade-offs, use
 [docs/analytics-backend.md](docs/analytics-backend.md).
@@ -227,9 +231,10 @@ Read the numbers as recomputed source-row totals, not cached dashboard state:
   becoming a fake zero-dollar value. The estimated delta is diagnostic until
   direct-vs-proxy proof exists.
 - Primary-usefulness status is separate from the one-sided diagnostics. A
-  useful result requires a direct-vs-proxy Codex CLI proof using aggregate
-  provider usage/cost and cache hit across the whole Codex turn/provider-call
-  sequence.
+  useful Codex result requires a direct-vs-proxy Codex CLI proof bracketed by
+  first-party account snapshots for quota/credit depletion. Aggregate provider
+  usage/cost and cache hit across the whole Codex turn/provider-call sequence
+  remain explanatory diagnostics.
 
 ## Docker Compose
 
@@ -301,16 +306,50 @@ Current support levels are maintained in
 [docs/agent-cli-support.md](docs/agent-cli-support.md), and the shared
 provider-row proof schema is in
 [docs/multi-cli-proof-contract.md](docs/multi-cli-proof-contract.md). Short
-version: Codex routes through LiteLLM but the latest direct-vs-proxy `gpt-5.5`
-proof is not useful, Claude Code is still route-gated on the current
-ChatGPT-backed `gpt-5.x` deployment, OpenCode routes through LiteLLM but still
-has no cache-usefulness proof after the latest on/off practical comparison,
+version: Codex routes through LiteLLM, and the latest account-bracketed
+mutable-output proof is both shareable and provider/cache positive. Marker
+`codex-savings-direct-first-20260626T142720Z` ran 12 resumed `gpt-5.5` turns per
+lane with `HEADROOM_RESPONSES_MUTABLE_OUTPUT_COMPRESSION=true` only for the
+experiment, direct first then proxy, yolo-equivalent mode, 240 seconds of
+account settle per lane, and `1,247,878` combined input tokens. First-party
+Codex account snapshots passed as `proxy_not_worse`: direct primary five-hour
+quota moved `36 -> 37`, proxy primary stayed `37 -> 37`, weekly quota stayed
+`21 -> 21` in both lanes, reset credits stayed `2`, and daily account tokens
+stayed `11,351,861`. Provider/cache diagnostics passed: proxy cached input was
+`+26,624`, newly processed input was `-26,448`, billing-equivalent input was
+`-23,785.6`, and cache-ratio delta was `+0.042409`; cost remains unavailable.
+Raw total tokens were `+176` for proxy and are recorded as a diagnostic warning,
+not a failure, because billing-equivalent input improved. Proxy DB rows
+recorded 24 provider calls, 23 successful mutable-output executions, and
+`189,504` local tokens saved. Report:
+`tmp/codex-savings-report/codex-savings-direct-first-20260626T142720Z/report.html`.
+MITM marker `codex-mitm-mutable-output-gpt55-20260626T134521Z` captured direct
+HTTP diagnostic, proxy inbound, and LiteLLM outbound provider request shape for
+the same request-shape family; MITM remains diagnostic and does not replace
+account snapshots.
+
+The passthrough-off experiment
+`codex-savings-passthrough-off-20260626T130210Z` also passed account-capacity
+but failed provider/cache diagnostics; outbound MITM showed that `off` removes
+`client_metadata` and `prompt_cache_key`, so do not use that experiment as a
+savings path.
+Claude Code is still route-gated on the current
+ChatGPT-backed `gpt-5.x` deployment. OpenCode routes through LiteLLM but still
+has no cache-usefulness proof after the latest on/off practical comparison.
 GitHub Copilot CLI routes through LiteLLM BYOK after upgrading to Copilot CLI
 1.0.65 and a current three-call `gpt-5.5` practical series, but remains
-time-window/cache-unproven, and Pi routes through LiteLLM after upgrading to Pi
+time-window/cache-unproven. Pi routes through LiteLLM after upgrading to Pi
 0.80.2 but is not useful on the latest `agent-90` versus compression-off
 practical proof. Do not claim cache/cost savings without an aggregate practical
 proof.
+
+The next Codex usefulness proof must be longer than the historical one-turn
+artifacts: run 8-12 resumed `codex exec --json` user-message turns per lane
+with `gpt-5.5`, yolo-equivalent execution mode on both lanes, and at least
+`1,000,000` combined direct-plus-wrapper input tokens before classifying
+five-hour/weekly quota usefulness. MITM captures remain required for claims
+about wrapper request shape, headers, bodies, continuation fields, or transport;
+first-party Codex account snapshots remain the quota proof.
 
 `bin/codex-litellm` sets `CODEX_HOME` to the managed `~/.codex-headroom`
 directory, writes `config.toml` and `litellm.config.toml`, symlinks native
@@ -432,20 +471,45 @@ uv run python scripts/e2e_agent90_usefulness.py --marker AGENT90_SMOKE --model g
 ```
 
 Run practical usefulness proofs with the primary model only when you are ready
-to spend real provider calls:
+to spend real Codex account quota and provider calls:
 
 ```bash
 uv run python scripts/e2e_agent90_usefulness.py --marker AGENT90_PROOF --model gpt-5.5 --execute --query-db
 ```
 
-Interpret the proof at the run level, not from one selected provider call. A
-Codex CLI turn can produce a sequence of provider calls, so the pass/fail
-decision comes from `summary.json` aggregate lane totals and
+Interpret the proof at the run level, not from one selected provider call. The
+primary question is whether real Codex account capacity depletes less, or at
+least not materially more, through `./bin/codex-litellm` than through direct
+Codex. Capture first-party account snapshots before and after each lane:
+
+```bash
+python3 scripts/codex_account_snapshot.py --pretty
+```
+
+The helper uses `codex app-server --stdio` JSON-RPC calls to
+`account/rateLimits/read` and `account/usage/read` without reading credential
+files. Those snapshots expose five-hour and weekly used percentages, reset
+times, credits, reset-credit count, and account token activity when the current
+CLI/account supports them. Use `--account-snapshot-settle-seconds <seconds>`
+for quota surfaces that update after the Codex lane completes; the default is
+`0.0` so smoke and fixture runs do not wait. The harness also retries
+unavailable snapshots with `--account-snapshot-attempts` and
+`--account-snapshot-retry-delay-seconds` because `codex app-server --stdio` can
+occasionally return usage without rate-limit data.
+
+A Codex CLI turn can produce a sequence of provider calls, so provider-token
+diagnostics still come from `summary.json` aggregate lane totals and
 `token_comparison.mvp_usefulness`: direct vs proxy input, cached input, output,
 reasoning, total tokens, cost when present, billing-equivalent input, and
 cache-hit ratio across the whole Codex turn/provider-call sequence. A proxy DB
 row proving compression ran is necessary evidence, but it does not prove
-usefulness unless the aggregate direct-vs-proxy comparison passes.
+usefulness unless the account-depletion comparison passes or is explicitly
+unavailable and the result is kept unproven. The harness also writes
+`trajectory-summary.json` per lane and `summary.json.trajectory_comparison`
+with local Codex JSONL command strings, agent messages, event counts, completed
+command counts, and command-output size estimates. Use that trajectory
+comparison to decide whether a provider-token/cache delta was measured over
+comparable agent behavior.
 
 Before `--execute` spends provider calls, the harness checks that LiteLLM is
 reachable at `--litellm-url` (default `http://127.0.0.1:4000`) and that
@@ -488,20 +552,27 @@ plan. The LiteLLM service declares
 same expected strategy in the DB proof query. Non-default values are validated
 against Headroom's built-in profile registry before the harness runs. Artifacts
 are written under `tmp/agent90-usefulness/<marker>/`, including per-lane
-`summary-lines.txt`, `token-summary.json`, and a top-level `summary.json` with
-direct-vs-proxy token deltas when both summaries parse completely. If Codex
-prints a lane cost summary, `token-summary.json` also records `cost_usd` and
-`summary.json` compares proxy-minus-direct cost; if a lane does not report
-cost, the cost comparison is marked `missing` rather than estimated.
-`summary.json` also records `mvp_usefulness`: total tokens must not regress,
+`summary-lines.txt`, `token-summary.json`, `trajectory-summary.json`, and a
+top-level `summary.json` with direct-vs-proxy token and trajectory deltas when
+both summaries parse completely. If Codex prints a lane cost summary,
+`token-summary.json` also records `cost_usd` and `summary.json` compares
+proxy-minus-direct cost; if a lane does not report cost, the cost comparison is
+marked `missing` rather than estimated.
+`summary.json` also records the provider diagnostic `mvp_usefulness`:
 cache-adjusted input must not regress using cached input multiplier `0.10`,
 cache-hit ratio must not drop by more than `0.05`, and cost must not regress
-when both lanes report it. It also records `completion_contract`: when both
-lanes report observed cost, the passing scope is `provider_usage_cache_cost`;
-when Codex reports no lane cost, the passing scope can only be
-`provider_usage_cache` with `cost_status="unavailable"`. Missing cost is never
-estimated. A measured regression or incomplete token summary exits non-zero
-even when both Codex lanes and the DB query succeed. With `--query-db`, the
+when both lanes report it. Raw total-token regression is retained as a warning
+when billing-equivalent input improves, and remains a failure when
+billing-equivalent input is also worse or unavailable. It also records a
+provider-diagnostic `completion_contract` such as `provider_usage_cache_cost`
+or `provider_usage_cache` with `cost_status="unavailable"`. Missing cost is
+never estimated. `trajectory_comparison.interpretation` separately reports
+whether both lanes produced Codex JSON events and whether completed command
+counts and command-output size estimates matched; a failed trajectory match
+does not by itself fail the run, but it prevents treating provider/cache deltas
+as trajectory-normalized evidence. A measured token regression or incomplete
+token summary exits non-zero even when both Codex lanes and the DB query
+succeed. With `--query-db`, the
 proxy lane also writes `db-proof.sql`,
 `db-proof.stdout.txt`, `db-proof.stderr.txt`, and `db-proof-result.json`. The
 proxy lane sets `LITELLM_PROXY_RUN_MARKER=<marker>`; `bin/codex-litellm` maps
@@ -514,9 +585,9 @@ also sets `CODEX_LITELLM_CLIENT=codex`; the wrapper sends it as
 `request_metadata.litellm_proxy_client` for proof grouping. The DB query uses
 the run marker when present and falls back to the proxy lane time window plus
 `--db-window-grace-seconds` for buffered ingestion. A proxy DB proof row is
-necessary but not sufficient: usefulness requires comparing provider-reported
-direct-vs-proxy tokens and cached input behavior, plus observed cost only when
-Codex reports it.
+necessary but not sufficient: usefulness requires comparing direct-vs-proxy
+Codex account depletion first. Provider-reported tokens, cached input behavior,
+and observed cost only when Codex reports it are secondary diagnostics.
 
 Keep LiteLLM `general_settings.forward_client_headers_to_llm_api` disabled in
 this deployment. LiteLLM forwards arbitrary `x-*` request headers upstream when
@@ -564,11 +635,58 @@ selects Headroom's built-in `HEADROOM_SAVINGS_PROFILE`, defaulting to
 required.
 
 Responses tool-output mutation is disabled by default with
-`HEADROOM_RESPONSES_MUTABLE_OUTPUT_COMPRESSION=false`. The latest practical
-`gpt-5.5` direct-vs-proxy Codex proof showed the proxy used more
-provider-reported total tokens despite a local token delta, so the callback now
-records a skipped execution and still captures provider/cache/Phoenix metadata
-unless that mutation is explicitly enabled for a fresh experiment.
+`HEADROOM_RESPONSES_MUTABLE_OUTPUT_COMPRESSION=false`. The default-wrapper
+12-turn resumed `gpt-5.5` direct-vs-proxy Codex proof still skipped mutable
+Responses compression and remained provider-negative. The mutable-on experiment
+`codex-savings-direct-first-20260626T142720Z` proved both account-capacity
+shareability and provider/cache savings with the gate enabled temporarily for
+the proxy runtime. Keep mutable output compression as an explicit experiment
+knob until it is intentionally promoted into the default stack. The callback
+records skipped executions and still captures provider/cache/Phoenix metadata
+unless mutation is explicitly enabled for a separate fresh proof.
+The passthrough-off diagnostic
+`codex-savings-passthrough-off-20260626T130210Z` is not that experiment; it
+removed cache-sensitive outbound fields and failed provider/cache diagnostics.
+
+For a practical post-change Codex proof, use the resumed-session harness rather
+than a one-turn smoke:
+
+```bash
+uv run python scripts/e2e_agent90_usefulness.py \
+  --marker codex-gpt55-resumed-$(date -u +%Y%m%dT%H%M%SZ) \
+  --model gpt-5.5 \
+  --session-turns 12 \
+  --task-lines 1800 \
+  --min-combined-input-tokens 1000000 \
+  --account-snapshot-settle-seconds 240 \
+  --account-snapshot-attempts 4 \
+  --query-db \
+  --yolo \
+  --execute
+```
+
+Run MITM as a separate full-fidelity request-shape trace for the same model and
+marker family when explaining any quota delta:
+
+```bash
+python3 scripts/mitm_codex_capture.py --lane direct --model gpt-5.5 --disable-websockets-for-capture --execute
+python3 scripts/mitm_codex_capture.py --lane proxy --model gpt-5.5 --no-bypass-localhost --execute
+```
+
+Codex Responses calls preserve cache-sensitive fields through LiteLLM's
+ChatGPT adapter by default. This keeps native request identity fields such as
+`model`, `prompt_cache_key`, `client_metadata`, `service_tier`,
+`parallel_tool_calls`, `previous_response_id`, `text`, and `truncation` in the
+provider body via LiteLLM `extra_body`. The callback also records
+continuation/cache diagnostics for provider-row forensics: top-level field
+presence, `previous_response_id` presence, input item type counts, output item
+count, and last input item type. Set
+`HEADROOM_RESPONSES_CHATGPT_PROVIDER_PASSTHROUGH=false` only for explicit
+field-drop experiments. The `codex-savings-passthrough-off-20260626T130210Z`
+proof showed this setting is not a savings fix: LiteLLM outbound MITM removed
+`client_metadata` and `prompt_cache_key`, and provider/cache diagnostics got
+worse. Do not treat field preservation itself as a compression usefulness
+proof.
 
 This callback adapter is the entire Headroom boundary. Do not add Headroom
 CLI/proxy/MCP or dashboard workflows to this repository; add only local adapter

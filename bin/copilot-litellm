@@ -69,6 +69,20 @@ def needs_provider_key(argv: list[str]) -> bool:
     )
 
 
+def optional_positive_int_env(source_env: str, target_env: str) -> None:
+    raw = os.environ.get(source_env)
+    if raw is None or raw == "":
+        os.environ.pop(target_env, None)
+        return
+    try:
+        value = int(raw)
+    except ValueError:
+        die(f"{source_env} must be a positive integer.")
+    if value <= 0:
+        die(f"{source_env} must be a positive integer.")
+    os.environ[target_env] = str(value)
+
+
 def real_copilot() -> str:
     try:
         return find_real_executable(
@@ -140,6 +154,14 @@ def main(argv: list[str]) -> int:
     os.environ["COPILOT_MODEL"] = model
     os.environ["COPILOT_PROVIDER_MODEL_ID"] = provider_model_id
     os.environ["COPILOT_PROVIDER_WIRE_MODEL"] = provider_wire_model
+    optional_positive_int_env(
+        "COPILOT_LITELLM_MAX_PROMPT_TOKENS",
+        "COPILOT_PROVIDER_MAX_PROMPT_TOKENS",
+    )
+    optional_positive_int_env(
+        "COPILOT_LITELLM_MAX_OUTPUT_TOKENS",
+        "COPILOT_PROVIDER_MAX_OUTPUT_TOKENS",
+    )
 
     executable = real_copilot()
     os.execvpe(executable, [executable, *argv], os.environ.copy())

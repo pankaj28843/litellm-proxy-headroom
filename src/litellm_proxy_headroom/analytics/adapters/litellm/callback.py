@@ -50,6 +50,9 @@ PROXY_RUN_MARKER_HEADER = "x-llm-proxy-run"
 PROXY_PROJECT_HEADER = "x-llm-proxy-project"
 PROXY_CLIENT_HEADER = "x-llm-proxy-client"
 PROXY_COMPRESSION_HEADER = "x-llm-proxy-compression"
+PROXY_RESPONSES_PROVIDER_PASSTHROUGH_HEADER = (
+    "x-llm-proxy-responses-provider-passthrough"
+)
 ANALYTICS_RETRIEVAL_TOOL_NAME = "litellm_proxy_analytics_retrieve_chunk"
 RESPONSES_MIN_MUTABLE_BYTES = 512
 RESPONSES_OUTPUT_ITEM_TYPES = frozenset(
@@ -84,19 +87,42 @@ RESPONSES_DROP_CODEX_PROMPT_CACHE_KEY_ENV = (
 RESPONSES_CHATGPT_PROVIDER_PASSTHROUGH_ENV = (
     "HEADROOM_RESPONSES_CHATGPT_PROVIDER_PASSTHROUGH"
 )
+RESPONSES_CODEX_HEADER_PASSTHROUGH_ENV = (
+    "HEADROOM_RESPONSES_CODEX_HEADER_PASSTHROUGH"
+)
 RESPONSES_CHATGPT_SESSION_AFFINITY_ENV = "HEADROOM_RESPONSES_CHATGPT_SESSION_AFFINITY"
 RESPONSES_CHATGPT_SESSION_AFFINITY_PREFIX = "codex-cache"
+RESPONSES_CODEX_HEADER_PASSTHROUGH_NAMES = frozenset(
+    {
+        "originator",
+        "session-id",
+        "thread-id",
+        "x-client-request-id",
+        "x-codex-beta-features",
+        "x-codex-parent-thread-id",
+        "x-codex-turn-metadata",
+        "x-codex-turn-state",
+        "x-codex-window-id",
+        "x-openai-internal-codex-responses-lite",
+        "x-openai-memgen-request",
+        "x-openai-subagent",
+        "x-responsesapi-include-timing-metrics",
+    }
+)
 RESPONSES_PROVIDER_PASSTHROUGH_FIELDS = frozenset(
     {
         "client_metadata",
         "max_output_tokens",
+        "model",
         "parallel_tool_calls",
+        "previous_response_id",
         "prompt_cache_key",
         "prompt_cache_retention",
         "service_tier",
         "store",
         "stream",
         "text",
+        "truncation",
     }
 )
 RESPONSES_CACHE_STABLE_TOP_LEVEL_KEYS = frozenset(
@@ -319,6 +345,20 @@ def _header_value(headers: dict[str, Any], header_name: str) -> str | None:
     return None
 
 
+def _safe_header_passthrough_value(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(value)
+    if not text or "\r" in text or "\n" in text:
+        return None
+    return text
+
+
+def _has_header(headers: dict[str, Any], header_name: str) -> bool:
+    wanted = header_name.lower()
+    return any(str(key).lower() == wanted for key in headers)
+
+
 def _active_savings_profile(environ: Mapping[str, str] | None = None) -> str:
     source = environ if environ is not None else os.environ
     requested = source.get(SAVINGS_PROFILE_ENV, DEFAULT_SAVINGS_PROFILE).strip()
@@ -381,6 +421,11 @@ def _request_metadata_from_data(
     )
     if compression_mode:
         metadata["litellm_proxy_compression_mode"] = compression_mode.lower()
+    provider_passthrough_mode = _responses_provider_passthrough_mode_from_data(data)
+    if provider_passthrough_mode:
+        metadata["litellm_proxy_responses_provider_passthrough"] = (
+            provider_passthrough_mode
+        )
     affinity_hash = _provider_session_affinity_hash(data)
     if affinity_hash:
         metadata["provider_session_affinity_source"] = "prompt_cache_key"
@@ -409,6 +454,24 @@ def _compression_mode_from_data(data: dict[str, Any]) -> str | None:
         max_length=32,
     )
     return value.lower() if value else None
+
+
+def _responses_provider_passthrough_mode_from_data(data: dict[str, Any]) -> str | None:
+    value = _sanitized_metadata_text(
+        _header_value(
+            _proxy_request_headers(data),
+            PROXY_RESPONSES_PROVIDER_PASSTHROUGH_HEADER,
+        ),
+        max_length=32,
+    )
+    if not value:
+        return None
+    normalized = value.lower()
+    if normalized in COMPRESSION_HEADER_DISABLED_VALUES:
+        return "off"
+    if normalized in {"1", "true", "yes", "on", "enabled"}:
+        return "on"
+    return None
 
 
 def _compression_disabled_by_proxy_header(data: dict[str, Any]) -> bool:
@@ -535,6 +598,44 @@ def _guard_codex_prompt_cache_key(data: dict[str, Any]) -> bool:
     return True
 
 
+def _preserve_codex_responses_headers(data: dict[str, Any]) -> list[str]:
+    """Forward only Codex-native Responses route headers through LiteLLM."""
+
+    if not _env_flag_enabled(RESPONSES_CODEX_HEADER_PASSTHROUGH_ENV, default=True):
+        return []
+    if data.get("input") is None or data.get("messages") is not None:
+        return []
+    if _proxy_client_from_data(data) != "codex":
+        return []
+
+    source_headers = _proxy_request_headers(data)
+    if not source_headers:
+        return []
+
+    extra_headers = data.get("extra_headers")
+    if not isinstance(extra_headers, dict):
+        extra_headers = {}
+        data["extra_headers"] = extra_headers
+
+    preserved: list[str] = []
+    for source_name, source_value in source_headers.items():
+        header_name = str(source_name).lower()
+        if header_name not in RESPONSES_CODEX_HEADER_PASSTHROUGH_NAMES:
+            continue
+        header_value = _safe_header_passthrough_value(source_value)
+        if header_value is None:
+            continue
+        if _has_header(extra_headers, header_name):
+            preserved.append(header_name)
+            continue
+        extra_headers[header_name] = header_value
+        preserved.append(header_name)
+
+    if not preserved and not extra_headers:
+        data.pop("extra_headers", None)
+    return sorted(dict.fromkeys(preserved))
+
+
 def _preserve_responses_provider_passthrough_fields(data: dict[str, Any]) -> list[str]:
     """Keep cache-sensitive Responses fields through LiteLLM provider transforms."""
 
@@ -556,6 +657,16 @@ def _preserve_responses_provider_passthrough_fields(data: dict[str, Any]) -> lis
     if not preserved and not extra_body:
         data.pop("extra_body", None)
     return preserved
+
+
+def _should_preserve_responses_provider_passthrough(data: dict[str, Any]) -> bool:
+    request_mode = _responses_provider_passthrough_mode_from_data(data)
+    if request_mode is not None:
+        return request_mode == "on"
+    raw = os.getenv(RESPONSES_CHATGPT_PROVIDER_PASSTHROUGH_ENV)
+    if raw is not None:
+        return _env_flag_enabled(RESPONSES_CHATGPT_PROVIDER_PASSTHROUGH_ENV)
+    return _proxy_client_from_data(data) == "codex"
 
 
 def _incoming_route_from_response(
@@ -875,6 +986,29 @@ def _responses_cache_boundary(input_value: list[Any]) -> tuple[int, str | None]:
     return len(input_value), None
 
 
+def _responses_input_item_type_counts(input_value: list[Any]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for item in input_value:
+        item_type = item.get("type") if isinstance(item, dict) else type(item).__name__
+        key = str(item_type or "unknown")
+        counts[key] = counts.get(key, 0) + 1
+    return dict(sorted(counts.items()))
+
+
+def _responses_cache_field_presence(data: dict[str, Any]) -> dict[str, bool]:
+    fields = (
+        "client_metadata",
+        "parallel_tool_calls",
+        "previous_response_id",
+        "prompt_cache_key",
+        "prompt_cache_retention",
+        "service_tier",
+        "text",
+        "truncation",
+    )
+    return {field: field in data for field in fields}
+
+
 def responses_cache_hot_zone_fingerprint(data: dict[str, Any]) -> dict[str, Any]:
     """Return a redacted fingerprint for the provider-cache-sensitive prefix."""
 
@@ -888,11 +1022,28 @@ def responses_cache_hot_zone_fingerprint(data: dict[str, Any]) -> dict[str, Any]
     boundary_type: str | None = None
     stable_input_prefix: list[Any] = []
     input_item_count: int | None = None
+    input_item_type_counts: dict[str, int] = {}
+    output_item_count = 0
+    last_input_item_type: str | None = None
 
     if isinstance(input_value, list):
         input_item_count = len(input_value)
         boundary_index, boundary_type = _responses_cache_boundary(input_value)
         stable_input_prefix = input_value[:boundary_index]
+        input_item_type_counts = _responses_input_item_type_counts(input_value)
+        output_item_count = sum(
+            1
+            for item in input_value
+            if isinstance(item, dict)
+            and item.get("type") in RESPONSES_OUTPUT_ITEM_TYPES
+        )
+        if input_value:
+            last_item = input_value[-1]
+            last_input_item_type = (
+                str(last_item.get("type") or "unknown")
+                if isinstance(last_item, dict)
+                else type(last_item).__name__
+            )
 
     diagnostic_stable_top_level = {
         key: value
@@ -940,6 +1091,17 @@ def responses_cache_hot_zone_fingerprint(data: dict[str, Any]) -> dict[str, Any]
         "stable_input_item_shapes": [
             _responses_input_item_shape(item) for item in stable_input_prefix
         ],
+        "top_level_field_presence": _responses_cache_field_presence(data),
+        "continuation": {
+            "previous_response_id_present": "previous_response_id" in data,
+            "previous_response_id_hash": _stable_hash(data["previous_response_id"])
+            if "previous_response_id" in data
+            else None,
+            "truncation_present": "truncation" in data,
+            "input_item_type_counts": input_item_type_counts,
+            "output_item_count": output_item_count,
+            "last_input_item_type": last_input_item_type,
+        },
         "mutable_boundary": {
             "input_index": boundary_index,
             "item_type": boundary_type,
@@ -1001,13 +1163,22 @@ def responses_deployment_payload_fingerprint(data: dict[str, Any]) -> dict[str, 
     """Return content-free shape evidence for the final LiteLLM deployment kwargs."""
 
     model = str(data.get("model") or DEFAULT_MODEL)
+    effective_data = dict(data)
+    extra_body = data.get("extra_body")
+    if isinstance(extra_body, dict):
+        effective_data.update(extra_body)
+    effective_model = str(effective_data.get("model") or model)
     return {
-        "version": 1,
+        "version": 2,
         "hook": "async_pre_call_deployment_hook",
         "model": model,
+        "effective_model": effective_model,
         "data_keys": sorted(str(key) for key in data),
-        "cache_hot_zone": responses_cache_hot_zone_fingerprint(data),
-        "mutable_output": responses_mutable_output_fingerprint(data, model),
+        "effective_data_keys": sorted(str(key) for key in effective_data),
+        "cache_hot_zone": responses_cache_hot_zone_fingerprint(effective_data),
+        "mutable_output": responses_mutable_output_fingerprint(
+            effective_data, effective_model
+        ),
     }
 
 
@@ -1163,9 +1334,12 @@ class HeadroomAnalyticsCallback(_HeadroomLiteLLMCallback, CustomLogger):
             transforms_applied.append("openai:responses:chatgpt_session_affinity")
         if _guard_codex_prompt_cache_key(data):
             transforms_applied.append("openai:responses:prompt_cache_key_removed")
+        preserved_headers = _preserve_codex_responses_headers(data)
+        if preserved_headers:
+            transforms_applied.append("openai:responses:codex_header_passthrough")
         preserved_passthrough = (
             _preserve_responses_provider_passthrough_fields(data)
-            if _env_flag_enabled(RESPONSES_CHATGPT_PROVIDER_PASSTHROUGH_ENV)
+            if _should_preserve_responses_provider_passthrough(data)
             else []
         )
         if preserved_passthrough:

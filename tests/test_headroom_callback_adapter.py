@@ -652,6 +652,59 @@ def test_responses_deployment_payload_diagnostic_is_content_free(
     assert compressed_output not in serialized
 
 
+def test_responses_deployment_payload_diagnostic_applies_extra_body_overlay() -> None:
+    from litellm_proxy_headroom.analytics.adapters.litellm import callback
+
+    data = {
+        "model": "chatgpt/gpt-5.5",
+        "extra_body": {
+            "model": "gpt-5.5",
+            "previous_response_id": "resp_previous",
+            "prompt_cache_key": "codex-cache-key",
+            "text": {"verbosity": "medium"},
+            "truncation": "auto",
+        },
+        "input": [
+            {
+                "type": "message",
+                "role": "user",
+                "content": [{"type": "input_text", "text": "redacted prompt"}],
+            }
+        ],
+        "prompt_cache_key": "codex-cache-key",
+    }
+
+    diagnostic = callback.responses_deployment_payload_fingerprint(data)
+
+    assert diagnostic["version"] == 2
+    assert diagnostic["model"] == "chatgpt/gpt-5.5"
+    assert diagnostic["effective_model"] == "gpt-5.5"
+    assert "extra_body" in diagnostic["data_keys"]
+    assert "prompt_cache_key" in diagnostic["effective_data_keys"]
+    assert diagnostic["cache_hot_zone"]["stable_top_level_field_hashes"][
+        "model"
+    ] == callback._stable_hash("gpt-5.5")
+    assert diagnostic["cache_hot_zone"]["stable_top_level_field_hashes"][
+        "prompt_cache_key"
+    ] == callback._stable_hash("codex-cache-key")
+    assert (
+        diagnostic["cache_hot_zone"]["stable_top_level_field_hashes"][
+            "previous_response_id"
+        ]
+        == callback._stable_hash("resp_previous")
+    )
+    assert diagnostic["cache_hot_zone"]["top_level_field_presence"][
+        "previous_response_id"
+    ]
+    assert diagnostic["cache_hot_zone"]["top_level_field_presence"]["truncation"]
+    assert diagnostic["cache_hot_zone"]["continuation"][
+        "previous_response_id_present"
+    ]
+    assert diagnostic["cache_hot_zone"]["continuation"][
+        "previous_response_id_hash"
+    ] == callback._stable_hash("resp_previous")
+
+
 def test_codex_proxy_prompt_cache_key_is_preserved_by_default() -> None:
     callback = load_adapter_callback()()
     data = {
@@ -672,13 +725,16 @@ def test_codex_proxy_prompt_cache_key_is_preserved_by_default() -> None:
 
     assert result is data
     assert data["prompt_cache_key"] == "codex-generated-key"
-    assert "extra_body" not in data
+    assert data["extra_body"] == {
+        "model": "gpt-5.5",
+        "prompt_cache_key": "codex-generated-key",
+    }
     capture = callback._pending["responses-cache-key-default"]
     assert capture.skip_reason == "responses_string_input_protected"
     assert "openai:responses:prompt_cache_key_removed" not in capture.transforms_applied
     assert (
         "openai:responses:prompt_cache_key_passthrough"
-        not in capture.transforms_applied
+        in capture.transforms_applied
     )
     assert "prompt_cache_key" in capture.cache_hot_zone["stable_top_level_keys"]
 
@@ -796,7 +852,7 @@ def test_codex_proxy_prompt_cache_key_can_be_removed_for_experiments(
 
     assert result is data
     assert "prompt_cache_key" not in data
-    assert "extra_body" not in data
+    assert data["extra_body"] == {"model": "gpt-5.5"}
     capture = callback._pending["responses-cache-key-removed"]
     assert capture.skip_reason == "responses_string_input_protected"
     assert "openai:responses:prompt_cache_key_removed" in capture.transforms_applied
@@ -833,20 +889,26 @@ def test_non_codex_prompt_cache_key_is_preserved() -> None:
     assert "prompt_cache_key" in capture.cache_hot_zone["stable_top_level_keys"]
 
 
-def test_codex_responses_provider_passthrough_is_opt_in(monkeypatch) -> None:
-    monkeypatch.setenv("HEADROOM_RESPONSES_CHATGPT_PROVIDER_PASSTHROUGH", "1")
+def test_codex_responses_provider_passthrough_is_default() -> None:
     callback = load_adapter_callback()()
     data = {
         "model": "gpt-5.5",
         "prompt_cache_key": "codex-key",
         "client_metadata": {"x-codex-turn-metadata": "redacted"},
         "parallel_tool_calls": False,
+        "previous_response_id": "resp_previous",
         "service_tier": "default",
         "store": True,
         "stream": True,
         "text": {"verbosity": "medium"},
+        "truncation": "auto",
         "metadata": {"request_id": "responses-provider-passthrough"},
         "input": "live user text should stay intact",
+        "proxy_server_request": {
+            "headers": {
+                "X-LLM-Proxy-Client": "codex",
+            }
+        },
     }
 
     result = asyncio.run(
@@ -856,12 +918,15 @@ def test_codex_responses_provider_passthrough_is_opt_in(monkeypatch) -> None:
     assert result is data
     assert data["extra_body"] == {
         "client_metadata": {"x-codex-turn-metadata": "redacted"},
+        "model": "gpt-5.5",
         "parallel_tool_calls": False,
+        "previous_response_id": "resp_previous",
         "prompt_cache_key": "codex-key",
         "service_tier": "default",
         "store": True,
         "stream": True,
         "text": {"verbosity": "medium"},
+        "truncation": "auto",
     }
     assert "metadata" not in data["extra_body"]
     capture = callback._pending["responses-provider-passthrough"]
@@ -870,7 +935,260 @@ def test_codex_responses_provider_passthrough_is_opt_in(monkeypatch) -> None:
     )
     assert "openai:responses:prompt_cache_key_passthrough" in capture.transforms_applied
     assert "client_metadata" in capture.cache_hot_zone["stable_top_level_keys"]
+    assert "previous_response_id" in capture.cache_hot_zone["stable_top_level_keys"]
     assert "store" in capture.cache_hot_zone["stable_top_level_keys"]
+    assert capture.cache_hot_zone["top_level_field_presence"][
+        "previous_response_id"
+    ]
+    assert capture.cache_hot_zone["top_level_field_presence"]["truncation"]
+    assert capture.cache_hot_zone["continuation"]["previous_response_id_present"]
+
+
+def test_codex_responses_header_passthrough_is_narrow_by_default() -> None:
+    callback = load_adapter_callback()()
+    data = {
+        "model": "gpt-5.5",
+        "input": "live user text should stay intact",
+        "metadata": {"request_id": "responses-codex-header-passthrough"},
+        "proxy_server_request": {
+            "headers": {
+                "Authorization": "Bearer proxy-key",
+                "Cookie": "session=secret",
+                "X-LLM-Proxy-Client": "codex",
+                "x-arbitrary-client-header": "must-not-forward",
+                "Session-Id": "session-123",
+                "Thread-Id": "thread-123",
+                "X-Client-Request-Id": "thread-123",
+                "X-Codex-Turn-State": "sticky-state",
+                "X-Codex-Turn-Metadata": '{"request_kind":"turn"}',
+                "X-Codex-Window-Id": "window-123",
+                "X-OpenAI-Subagent": "review",
+                "X-OpenAI-Internal-Codex-Responses-Lite": "true",
+                "X-ResponsesAPI-Include-Timing-Metrics": "true",
+            }
+        },
+    }
+
+    result = asyncio.run(
+        callback.async_pre_call_hook(data=data, call_type="aresponses")
+    )
+
+    assert result is data
+    assert data["extra_headers"] == {
+        "session-id": "session-123",
+        "thread-id": "thread-123",
+        "x-client-request-id": "thread-123",
+        "x-codex-turn-state": "sticky-state",
+        "x-codex-turn-metadata": '{"request_kind":"turn"}',
+        "x-codex-window-id": "window-123",
+        "x-openai-subagent": "review",
+        "x-openai-internal-codex-responses-lite": "true",
+        "x-responsesapi-include-timing-metrics": "true",
+    }
+    assert "Authorization" not in data["extra_headers"]
+    assert "Cookie" not in data["extra_headers"]
+    assert "x-arbitrary-client-header" not in data["extra_headers"]
+
+    capture = callback._pending["responses-codex-header-passthrough"]
+    assert "openai:responses:codex_header_passthrough" in capture.transforms_applied
+    assert "openai:responses:chatgpt_provider_passthrough" in (
+        capture.transforms_applied
+    )
+
+
+def test_codex_responses_header_passthrough_can_be_disabled(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("HEADROOM_RESPONSES_CODEX_HEADER_PASSTHROUGH", "0")
+    callback = load_adapter_callback()()
+    data = {
+        "model": "gpt-5.5",
+        "input": "live user text should stay intact",
+        "metadata": {"request_id": "responses-codex-header-disabled"},
+        "proxy_server_request": {
+            "headers": {
+                "X-LLM-Proxy-Client": "codex",
+                "X-Codex-Turn-State": "sticky-state",
+            }
+        },
+    }
+
+    asyncio.run(callback.async_pre_call_hook(data=data, call_type="aresponses"))
+
+    assert "extra_headers" not in data
+    capture = callback._pending["responses-codex-header-disabled"]
+    assert "openai:responses:codex_header_passthrough" not in (
+        capture.transforms_applied
+    )
+
+
+def test_non_codex_responses_header_passthrough_is_not_enabled_by_default() -> None:
+    callback = load_adapter_callback()()
+    data = {
+        "model": "gpt-5.5",
+        "input": "live user text should stay intact",
+        "metadata": {"request_id": "responses-non-codex-header-passthrough"},
+        "proxy_server_request": {
+            "headers": {
+                "X-LLM-Proxy-Client": "copilot",
+                "X-Codex-Turn-State": "sticky-state",
+            }
+        },
+    }
+
+    asyncio.run(callback.async_pre_call_hook(data=data, call_type="aresponses"))
+
+    assert "extra_headers" not in data
+    capture = callback._pending["responses-non-codex-header-passthrough"]
+    assert "openai:responses:codex_header_passthrough" not in (
+        capture.transforms_applied
+    )
+
+
+def test_codex_responses_provider_passthrough_can_be_disabled(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("HEADROOM_RESPONSES_CHATGPT_PROVIDER_PASSTHROUGH", "0")
+    callback = load_adapter_callback()()
+    data = {
+        "model": "gpt-5.5",
+        "prompt_cache_key": "codex-key",
+        "client_metadata": {"x-codex-turn-metadata": "redacted"},
+        "parallel_tool_calls": False,
+        "service_tier": "default",
+        "store": False,
+        "stream": True,
+        "text": {"verbosity": "medium"},
+        "metadata": {"request_id": "responses-provider-passthrough-disabled"},
+        "input": "live user text should stay intact",
+        "proxy_server_request": {
+            "headers": {
+                "X-LLM-Proxy-Client": "codex",
+            }
+        },
+    }
+
+    result = asyncio.run(
+        callback.async_pre_call_hook(data=data, call_type="aresponses")
+    )
+
+    assert result is data
+    assert "extra_body" not in data
+    capture = callback._pending["responses-provider-passthrough-disabled"]
+    assert "openai:responses:chatgpt_provider_passthrough" not in (
+        capture.transforms_applied
+    )
+    assert (
+        "openai:responses:prompt_cache_key_passthrough"
+        not in capture.transforms_applied
+    )
+
+
+def test_codex_responses_provider_passthrough_can_be_disabled_per_request() -> None:
+    callback = load_adapter_callback()()
+    data = {
+        "model": "gpt-5.5",
+        "prompt_cache_key": "codex-key",
+        "client_metadata": {"x-codex-turn-metadata": "metadata"},
+        "text": {"verbosity": "medium"},
+        "metadata": {"request_id": "responses-provider-passthrough-request-off"},
+        "input": "live user text should stay intact",
+        "proxy_server_request": {
+            "headers": {
+                "X-LLM-Proxy-Client": "codex",
+                "X-LLM-Proxy-Responses-Provider-Passthrough": "off",
+            }
+        },
+    }
+
+    result = asyncio.run(
+        callback.async_pre_call_hook(data=data, call_type="aresponses")
+    )
+
+    assert result is data
+    assert "extra_body" not in data
+    capture = callback._pending["responses-provider-passthrough-request-off"]
+    assert capture.request_metadata[
+        "litellm_proxy_responses_provider_passthrough"
+    ] == "off"
+    assert "openai:responses:chatgpt_provider_passthrough" not in (
+        capture.transforms_applied
+    )
+    assert (
+        "openai:responses:prompt_cache_key_passthrough"
+        not in capture.transforms_applied
+    )
+
+
+def test_codex_responses_provider_passthrough_can_be_enabled_per_request(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("HEADROOM_RESPONSES_CHATGPT_PROVIDER_PASSTHROUGH", "0")
+    callback = load_adapter_callback()()
+    data = {
+        "model": "gpt-5.5",
+        "prompt_cache_key": "codex-key",
+        "client_metadata": {"x-codex-turn-metadata": "metadata"},
+        "text": {"verbosity": "medium"},
+        "metadata": {"request_id": "responses-provider-passthrough-request-on"},
+        "input": "live user text should stay intact",
+        "proxy_server_request": {
+            "headers": {
+                "X-LLM-Proxy-Client": "codex",
+                "X-LLM-Proxy-Responses-Provider-Passthrough": "on",
+            }
+        },
+    }
+
+    result = asyncio.run(
+        callback.async_pre_call_hook(data=data, call_type="aresponses")
+    )
+
+    assert result is data
+    assert data["extra_body"] == {
+        "client_metadata": {"x-codex-turn-metadata": "metadata"},
+        "model": "gpt-5.5",
+        "prompt_cache_key": "codex-key",
+        "text": {"verbosity": "medium"},
+    }
+    capture = callback._pending["responses-provider-passthrough-request-on"]
+    assert capture.request_metadata[
+        "litellm_proxy_responses_provider_passthrough"
+    ] == "on"
+    assert "openai:responses:chatgpt_provider_passthrough" in (
+        capture.transforms_applied
+    )
+    assert "openai:responses:prompt_cache_key_passthrough" in capture.transforms_applied
+
+
+def test_non_codex_responses_provider_passthrough_remains_opt_in(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("HEADROOM_RESPONSES_CHATGPT_PROVIDER_PASSTHROUGH", "1")
+    callback = load_adapter_callback()()
+    data = {
+        "model": "gpt-5.5",
+        "prompt_cache_key": "caller-key",
+        "text": {"verbosity": "medium"},
+        "metadata": {"request_id": "responses-provider-passthrough-non-codex"},
+        "input": "live user text should stay intact",
+    }
+
+    result = asyncio.run(
+        callback.async_pre_call_hook(data=data, call_type="aresponses")
+    )
+
+    assert result is data
+    assert data["extra_body"] == {
+        "model": "gpt-5.5",
+        "prompt_cache_key": "caller-key",
+        "text": {"verbosity": "medium"},
+    }
+    capture = callback._pending["responses-provider-passthrough-non-codex"]
+    assert "openai:responses:chatgpt_provider_passthrough" in (
+        capture.transforms_applied
+    )
+    assert "openai:responses:prompt_cache_key_passthrough" in capture.transforms_applied
 
 
 def test_chatgpt_transform_can_skip_builtin_default_instruction_prefix(

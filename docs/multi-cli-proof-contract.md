@@ -2,7 +2,8 @@
 
 This contract keeps CLI support claims comparable across Codex, Claude Code,
 OpenCode, GitHub Copilot CLI, Pi, and later wrappers. It is intentionally based
-on real CLI commands and LiteLLM analytics rows, not one-off provider calls.
+on real CLI commands, first-party account snapshots where available, and
+LiteLLM analytics rows, not one-off provider calls.
 
 ## Required Proof Fields
 
@@ -21,6 +22,10 @@ Every supported or route-tested CLI proof must record:
 | `client_attribution` | `litellm_proxy_client` from DB rows where available. |
 | `request_count` | Count of matched LiteLLM request rows. |
 | `provider_reported_call_count` | Count of rows with `measurement_source=provider_reported`. |
+| `account_snapshot_status` | `observed`, `unavailable`, or `not_applicable`. For Codex, use `python3 scripts/codex_account_snapshot.py`, which drives `codex app-server --stdio` with `account/rateLimits/read` and `account/usage/read` when available. |
+| `five_hour_limit_delta` | Direct/proxy before-after movement for the Codex primary rate-limit window when observed. |
+| `weekly_limit_delta` | Direct/proxy before-after movement for the Codex secondary rate-limit window when observed. |
+| `credit_delta` | Direct/proxy before-after movement for account credit balance or reset-credit count when observed. |
 | `input_tokens` | Aggregate provider-reported input tokens. |
 | `cached_input_tokens` | Aggregate provider-reported cached input tokens; `absent` when the provider omits it. |
 | `cache_ratio` | `cached_input_tokens / input_tokens`, or `unavailable` when cached input is absent. |
@@ -29,12 +34,15 @@ Every supported or route-tested CLI proof must record:
 | `total_tokens` | Aggregate provider-reported total tokens. |
 | `cost_status` | `observed`, `unavailable`, or `not_applicable`; never estimate missing cost. |
 | `cost_total` | Observed cost only when the CLI/provider reports it. |
+| `trajectory_comparison` | For Codex A/B proofs, `summary.json.trajectory_comparison` from `scripts/e2e_agent90_usefulness.py`, including completed command counts, command-output size estimates, and whether provider/cache deltas were trajectory-normalized. |
+| `minimum_input_token_floor` | For Codex practical quota proof, `summary.json.minimum_input_token_floor`. The active gate requires at least `1,000,000` combined direct-plus-wrapper input tokens over 8-12 resumed `gpt-5.5` user-message turns. |
+| `request_shape_evidence` | Optional diagnostic artifact path when request/header/body parity matters. For Codex, use `scripts/mitm_codex_capture.py` full-fidelity local `flows.jsonl` evidence; artifacts may contain observed wire credentials and prompts, so keep them local and out of commits. |
 
 ## Current Support Matrix
 
 | CLI | Status | Current proof |
 |---|---|---|
-| Codex CLI | `route_supported_not_useful` | Latest actual Codex CLI `gpt-5.5` direct-vs-proxy proof marker `codex-gpt55-proof-20260625T110709Z` showed proxy total `37055` versus direct total `37031`; cost remains unavailable when Codex JSON omits it. |
+| Codex CLI | `supported_useful`; mutable-output account shareability and provider/cache savings proven | Latest proof `codex-savings-direct-first-20260626T142720Z` used 12 resumed `gpt-5.5` turns per lane, direct first then proxy, yolo-equivalent mode, first-party account snapshots, 240s account settle per lane, and `1,247,878` combined input tokens. Account snapshots passed as `proxy_not_worse`: direct primary `36 -> 37`, proxy primary `37 -> 37`, weekly `21 -> 21` for both, reset credits `2`, and daily tokens `11,351,861`. Provider/cache diagnostics passed: proxy cached input `+26,624`, newly processed input `-26,448`, billing-equivalent input `-23,785.6`, and cache-ratio delta `+0.042409`; cost unavailable. Raw proxy total tokens were `+176` and are a warning because billing-equivalent input improved. Proxy DB rows recorded 24 provider calls, 23 successful mutable-output executions, and `189,504` local tokens saved. |
 | Claude Code | `route_gated` | Latest real `gpt-5.4-mini` Claude Code smoke marker `claude-smoke-currentroute-20260625T0202` reached LiteLLM as client `claude`, but the current ChatGPT-backed model group still fails with `System messages are not allowed` before provider-reported usage/cache/cost. |
 | OpenCode | `route_supported_cache_unproven` | Real `opencode run --format json` smoke, practical route proof, and same-route on/off `gpt-5.5` series routed through LiteLLM with marker-correlated provider rows. Normal mode used `1232` fewer total provider tokens than compression-off, but cached input was absent in both, observed cost was unavailable, and local compression saved `0` tokens. |
 | GitHub Copilot CLI | `route_supported_cache_unproven` | After upgrading Copilot CLI to `1.0.65`, `bin/copilot-litellm` still uses the documented local BYOK provider env vars to route through LiteLLM. A post-upgrade smoke and current three-call `gpt-5.5` practical series reached `/v1/responses`; the CLI still lacks a documented request-header surface, so proof remains time-window correlated and cached input/cost remain unavailable. |
@@ -61,7 +69,11 @@ operating mode.
 
 GitHub Copilot CLI does not currently document a local custom-header surface
 for BYOK provider requests. Copilot route proof therefore remains time-window
-correlated unless a later CLI/source version exposes headers.
+correlated unless a later CLI/source version exposes headers. The wrapper can
+optionally map `COPILOT_LITELLM_MAX_PROMPT_TOKENS` and
+`COPILOT_LITELLM_MAX_OUTPUT_TOKENS` to Copilot's documented BYOK model-limit
+env vars for controlled experiments, but those knobs do not prove cache
+usefulness by themselves.
 
 ## Latest Evidence Pointers
 
@@ -71,7 +83,7 @@ current support labels.
 
 | CLI | Marker/status | Evidence |
 |---|---|---|
-| Codex CLI | `route_supported_not_useful`; cost unavailable | `~/plan-capsules/litellm-proxy-headroom/2026-06-25T101448+0200-phoenix-trace-metadata-economics-rework/after/direct-vs-proxy-codex/codex-gpt55-proof-20260625T110709Z/summary.json` shows proxy input `+24`, total `+24`, cache-ratio delta `+0.485380`, and cost `missing`. |
+| Codex CLI | `supported_useful`; mutable-output account shareability and provider/cache savings proven | `tmp/agent90-usefulness/codex-savings-direct-first-20260626T142720Z/summary.json` and `tmp/codex-savings-report/codex-savings-direct-first-20260626T142720Z/report.html` show the latest proof. Minimum input floor passed with `1,247,878` combined input tokens. Account snapshots passed as `proxy_not_worse`: direct primary `36 -> 37`, proxy primary `37 -> 37`, weekly `21 -> 21` for both, reset credits `2`, and daily account tokens `11,351,861`. Provider/cache diagnostics passed on cached input `+26,624`, newly processed input `-26,448`, billing-equivalent input `-23,785.6`, and cache-ratio delta `+0.042409`; raw proxy total `+176` is a warning because billing-equivalent input improved. Cost unavailable. Proxy DB rows recorded 24 provider calls, 23 successful mutable-output executions, and `189,504` local tokens saved. MITM marker `codex-mitm-mutable-output-gpt55-20260626T134521Z` records direct HTTP diagnostic, proxy inbound, and LiteLLM outbound request-shape traces for the same request-shape family. Default-wrapper proof `tmp/codex-savings-report/codex-savings-proxyfirst-20260626T121000Z/report.html` remains account-capacity positive but provider-negative. Passthrough-off report `tmp/codex-savings-report/codex-savings-passthrough-off-20260626T130210Z/report.html` proves passthrough-off is not useful because provider/cache diagnostics failed and outbound MITM showed `client_metadata`/`prompt_cache_key` removal. |
 | Claude Code | `route_gated` | `tmp/claude-route-proof/claude-smoke-currentroute-20260625T0202/proof.json` normalizes the latest real Claude Code smoke. Marker-correlated DB rows record two failed `/v1/chat/completions` requests for client `claude`, model `gpt-5.4-mini`, no provider-reported usage/cache/cost, and the CLI output reports `System messages are not allowed`. Earlier marker-attribution artifact: `tmp/claude-route-proof/claude-smoke-wrapperheaders-20260625T0320/stdout.jsonl`. |
 | OpenCode | `route_supported_cache_unproven` | `tmp/multi-cli-proof/opencode-compression-comparison-20260625T014154Z.json` compares matching real OpenCode practical series: normal marker `opencode-compression-on-20260625T014154Z` versus compression-off marker `opencode-compression-off-20260625T014015Z`. Normal aggregate: input `49964`, total `50297`, cached input absent. Compression-off aggregate: input `51084`, total `51529`, cached input absent. Normal mode used `1232` fewer total provider tokens, but cost remained unavailable and normal local compression saved `0` tokens. Earlier route proof: `tmp/multi-cli-proof/opencode-practical-20260624T1950/proof.json`. |
 | GitHub Copilot CLI | `route_supported_cache_unproven` | `tmp/copilot-route-proof/copilot-smoke-20260625T0150-upgrade/proof.json` normalizes the real post-upgrade `gpt-5.4-mini` smoke on Copilot CLI `1.0.65`; one `/v1/responses` provider row by time window, input `15735`, cached input `absent`, output `40`, reasoning `21`, total `15775`, cost `unavailable`. Current practical artifact: `tmp/copilot-route-proof/copilot-practical-20260625T020226Z/proof.json` from three real `gpt-5.5` Copilot CLI 1.0.65 BYOK runs; aggregate input `47216`, cached input `absent`, output `266`, reasoning `48`, total `47482`, cost `unavailable`. Earlier 1.0.64 practical artifact: `tmp/copilot-route-proof/copilot-practical-20260624T182754Z/proof.json`. |
@@ -114,6 +126,35 @@ order by cr.created_at, pc.created_at;
 
 If a CLI cannot carry marker headers, use a narrow start/end UTC window and
 state `db_correlation=time_window`.
+
+## Request-Shape Forensics
+
+When a route claim depends on what the CLI actually sent, use full-fidelity
+local network forensics rather than dashboard totals or code inference alone.
+MITM artifacts are required for claims about observed transport, header
+propagation, or body field parity unless the claim is explicitly marked
+source-inferred or unobserved. For Codex:
+
+```bash
+python3 scripts/mitm_codex_capture.py --lane direct --execute
+python3 scripts/mitm_codex_capture.py --lane proxy --no-bypass-localhost --execute
+```
+
+Direct Codex defaults to Responses WebSocket when the selected provider supports
+it, and that model path is not fully visible through plain `HTTPS_PROXY`
+mitmproxy capture. Use `--disable-websockets-for-capture` only as a diagnostic
+HTTP override and label the artifact accordingly. These artifacts prove request
+shape on the observed transport; they do not replace account snapshot proof.
+
+For the active Codex usefulness goal, request-shape MITM is mandatory whenever a
+claim says the LiteLLM/Headroom wrapper did or did not add quota-penalizing
+behavior. Compare observed wrapper traces against direct HTTP diagnostic traces
+for model/reasoning parity, custom headers, request-body byte size, input item
+count, tool shape, `prompt_cache_key`, `previous_response_id`, `truncation`,
+`client_metadata`, and localhost/proxy routing. The pass/fail usefulness
+classification still comes from the account-bracketed resumed-session proof:
+8-12 `gpt-5.5` user-message turns per lane and
+`minimum_input_token_floor.ok=true` at `1,000,000` combined input tokens.
 
 ## Collector Workflow
 

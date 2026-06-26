@@ -94,6 +94,7 @@ def test_agent90_usefulness_harness_dry_run_contract(tmp_path: Path) -> None:
 
     assert plan["mode"] == "dry-run"
     assert plan["marker"] == "AGENT90_TEST"
+    assert plan["lane_order"] == ["direct", "proxy"]
     assert plan["artifact_dir"] == str(tmp_path.resolve() / "AGENT90_TEST")
     assert not (tmp_path / "AGENT90_TEST").exists()
 
@@ -112,10 +113,12 @@ def test_agent90_usefulness_harness_dry_run_contract(tmp_path: Path) -> None:
         "-s",
         "read-only",
     ]
-    assert direct["command"][:13] == [
+    assert direct["command"][:15] == [
         "codex",
         "-m",
         "gpt-5.5",
+        "-c",
+        'model_provider="openai"',
         "-c",
         'model_reasoning_effort="medium"',
         "-c",
@@ -129,15 +132,21 @@ def test_agent90_usefulness_harness_dry_run_contract(tmp_path: Path) -> None:
     ]
     assert proxy["command"][11] == "-C"
     assert proxy["command"][12] == str(REPO_ROOT)
-    assert direct["command"][13] == proxy["command"][13] == "exec"
-    assert direct["command"][14] == proxy["command"][14] == "--json"
-    assert direct["command"][15] == proxy["command"][15]
-    assert "AGENT90_TEST" in direct["command"][15]
-    assert "for i in range(3)" in direct["command"][15]
+    assert direct["command"][15] == proxy["command"][13] == "exec"
+    assert direct["command"][16] == proxy["command"][14] == "--json"
+    assert direct["command"][17] == proxy["command"][15]
+    assert "AGENT90_TEST" in direct["command"][17]
+    assert "for i in range(3)" in direct["command"][17]
     assert plan["task"]["model"] == "gpt-5.5"
+    assert plan["task"]["direct_model_provider"] == "openai"
     assert plan["task"]["reasoning_effort"] == "medium"
     assert plan["task"]["model_verbosity"] == "medium"
     assert plan["task"]["expected_savings_profile"] == "agent-90"
+    assert plan["task"]["proxy_responses_provider_passthrough"] is None
+    assert plan["task"]["prompt_source"] == {
+        "type": "generated_shell_output_task",
+        "lines": 3,
+    }
     assert plan["preflight"]["enabled"] is True
     assert plan["preflight"]["litellm_url"] == "http://127.0.0.1:4000"
     assert plan["preflight"]["model_list_url"] == "http://127.0.0.1:4000/v1/models"
@@ -151,8 +160,21 @@ def test_agent90_usefulness_harness_dry_run_contract(tmp_path: Path) -> None:
     assert plan["preflight"]["analytics_url"] == "http://127.0.0.1:8010"
     assert plan["preflight"]["require_analytics_ready"] is False
     assert plan["preflight"]["artifacts"]["result"].endswith("preflight-result.json")
+    assert plan["account_snapshots"]["enabled"] is True
+    assert plan["account_snapshots"]["codex_bin"] == "codex"
+    assert plan["account_snapshots"]["script"].endswith("scripts/codex_account_snapshot.py")
+    assert plan["account_snapshots"]["timeout_seconds"] == 20.0
+    assert plan["account_snapshots"]["settle_seconds"] == 0.0
+    assert plan["account_snapshots"]["attempts"] == 2
+    assert plan["account_snapshots"]["retry_delay_seconds"] == 1.0
 
     assert plan["lanes"]["direct"]["artifacts"]["stdout"].endswith("direct/stdout.txt")
+    assert plan["lanes"]["direct"]["artifacts"]["account_before"].endswith(
+        "direct/account-before.json"
+    )
+    assert plan["lanes"]["direct"]["artifacts"]["account_after_result"].endswith(
+        "direct/account-after-result.json"
+    )
     assert plan["lanes"]["proxy"]["artifacts"]["result"].endswith("proxy/result.json")
     assert plan["lanes"]["proxy"]["artifacts"]["environment"].endswith(
         "proxy/environment.json"
@@ -172,11 +194,20 @@ def test_agent90_usefulness_harness_dry_run_contract(tmp_path: Path) -> None:
     assert plan["lanes"]["direct"]["artifacts"]["token_summary"].endswith(
         "direct/token-summary.json"
     )
+    assert plan["lanes"]["direct"]["artifacts"]["trajectory_summary"].endswith(
+        "direct/trajectory-summary.json"
+    )
     assert "<marker>" in plan["proxy_db"]["query_template"]
     assert "'agent-90' as expected_strategy_name" in plan["proxy_db"]["query_template"]
     assert "litellm_proxy_run_marker" in plan["proxy_db"]["query_template"]
     assert "litellm_proxy_project" in plan["proxy_db"]["query_template"]
     assert "litellm_proxy_client" in plan["proxy_db"]["query_template"]
+    assert "litellm_proxy_responses_provider_passthrough" in (
+        plan["proxy_db"]["query_template"]
+    )
+    assert "responses_provider_passthrough_modes" in (
+        plan["proxy_db"]["query_template"]
+    )
     assert "correlation_source" in plan["proxy_db"]["query_template"]
     assert "<proxy_started_at_utc>" in plan["proxy_db"]["query_template"]
     assert "<proxy_ended_at_utc>" in plan["proxy_db"]["query_template"]
@@ -203,6 +234,7 @@ def test_agent90_usefulness_harness_dry_run_contract(tmp_path: Path) -> None:
     assert any("read-only" in rule for rule in plan["stop_rules"])
     assert any("Preflight" in rule for rule in plan["stop_rules"])
     assert any("configured model" in rule for rule in plan["stop_rules"])
+    assert any("model_provider" in rule for rule in plan["stop_rules"])
     assert any("reasoning effort" in rule for rule in plan["stop_rules"])
     assert any("model verbosity" in rule for rule in plan["stop_rules"])
     assert any("local Headroom callback" in rule for rule in plan["stop_rules"])
@@ -211,6 +243,123 @@ def test_agent90_usefulness_harness_dry_run_contract(tmp_path: Path) -> None:
     assert any(
         "expected Headroom strategy profile" in rule for rule in plan["stop_rules"]
     )
+
+
+def test_agent90_usefulness_harness_can_set_proxy_provider_passthrough() -> None:
+    harness = _load_harness()
+    args = harness.parse_args(
+        [
+            "--marker",
+            "AGENT90_PASSTHROUGH_OFF",
+            "--proxy-responses-provider-passthrough",
+            "off",
+        ]
+    )
+    plan = harness.build_plan(args)
+
+    assert plan["task"]["proxy_responses_provider_passthrough"] == "off"
+    assert plan["lanes"]["proxy"]["environment"][
+        "CODEX_LITELLM_RESPONSES_PROVIDER_PASSTHROUGH"
+    ] == "off"
+    assert (
+        "CODEX_LITELLM_RESPONSES_PROVIDER_PASSTHROUGH"
+        not in plan["lanes"]["direct"].get("environment", {})
+    )
+
+
+def test_agent90_usefulness_harness_prompt_file_replaces_generated_task(
+    tmp_path: Path,
+) -> None:
+    harness = _load_harness()
+    prompt_path = tmp_path / "prompt.md"
+    prompt_text = "Do not edit files. Summarize current repo state for AGENT90_FILE.\n"
+    prompt_path.write_text(prompt_text)
+
+    args = harness.parse_args(
+        [
+            "--marker",
+            "AGENT90_FILE",
+            "--prompt-file",
+            str(prompt_path),
+        ]
+    )
+    plan = harness.build_plan(args)
+
+    assert plan["task"]["prompt"] == prompt_text
+    assert plan["task"]["prompt_source"] == {
+        "type": "file",
+        "path": str(prompt_path.resolve()),
+        "bytes": len(prompt_text.encode("utf-8")),
+    }
+    assert plan["lanes"]["direct"]["command"][-1] == prompt_text
+    assert plan["lanes"]["proxy"]["command"][-1] == prompt_text
+    assert "for i in range" not in prompt_text
+
+
+def test_agent90_usefulness_harness_multiturn_plan_uses_resume() -> None:
+    harness = _load_harness()
+    args = harness.parse_args(
+        [
+            "--marker",
+            "AGENT90_MULTI",
+            "--task-lines",
+            "3",
+            "--session-turns",
+            "3",
+            "--min-combined-input-tokens",
+            "1000000",
+            "--yolo",
+        ]
+    )
+
+    plan = harness.build_plan(args)
+
+    assert plan["task"]["session_turns"] == 3
+    assert plan["lane_order"] == ["direct", "proxy"]
+    assert plan["task"]["min_combined_input_tokens"] == 1000000
+    assert plan["task"]["yolo"] is True
+    assert plan["task"]["prompt_source"] == {
+        "type": "generated_shell_output_task",
+        "lines": 3,
+        "turns": 3,
+        "mode": "resumed_codex_exec_session",
+    }
+    assert len(plan["lanes"]["direct"]["commands"]) == 3
+    assert "--dangerously-bypass-approvals-and-sandbox" in (
+        plan["lanes"]["direct"]["commands"][0]
+    )
+    assert plan["lanes"]["direct"]["commands"][0][-2] == "--json"
+    assert "resume" not in plan["lanes"]["direct"]["commands"][0]
+    assert plan["lanes"]["direct"]["commands"][1][-4:-2] == [
+        "resume",
+        "--json",
+    ]
+    assert plan["lanes"]["direct"]["commands"][1][-2] == "<session-id-from-turn-1>"
+    assert "user message 2 of 3" in plan["lanes"]["direct"]["commands"][1][-1]
+    assert plan["mitm_trace"]["trace_is_not_quota_proof"] is True
+    assert plan["mitm_trace"]["commands"]["proxy_full_fidelity"][-2:] == [
+        "--no-bypass-localhost",
+        "--execute",
+    ]
+
+
+def test_agent90_usefulness_harness_supports_proxy_first_lane_order() -> None:
+    harness = _load_harness()
+    args = harness.parse_args(
+        [
+            "--marker",
+            "AGENT90_PROXY_FIRST",
+            "--task-lines",
+            "3",
+            "--lane-order",
+            "proxy,direct",
+        ]
+    )
+
+    plan = harness.build_plan(args)
+
+    assert plan["lane_order"] == ["proxy", "direct"]
+    assert set(plan["lanes"]) == {"direct", "proxy"}
 
 
 def test_agent90_usefulness_harness_threads_custom_litellm_url_to_proxy() -> None:
@@ -656,6 +805,109 @@ def test_token_summary_parser_uses_latest_cumulative_codex_json_usage_event() ->
     ]
 
 
+def test_codex_trajectory_parser_preserves_local_debug_evidence() -> None:
+    harness = _load_harness()
+
+    stdout = "\n".join(
+        [
+            '{"type":"thread.started","thread_id":"thread-123"}',
+            '{"type":"turn.started"}',
+            (
+                '{"type":"item.started","item":{"id":"item_1",'
+                '"type":"command_execution","command":"git status --short",'
+                '"status":"in_progress","exit_code":null,'
+                '"aggregated_output":""}}'
+            ),
+            (
+                '{"type":"item.completed","item":{"id":"item_1",'
+                '"type":"command_execution","command":"git status --short",'
+                '"status":"completed","exit_code":0,'
+                '"aggregated_output":"<<ccr:abc,string,1.5KB>>"}}'
+            ),
+            (
+                '{"type":"item.completed","item":{"id":"item_2",'
+                '"type":"agent_message","text":"raw local debug note"}}'
+            ),
+            (
+                '{"type":"turn.completed","usage":{"input_tokens":20,'
+                '"cached_input_tokens":10,"output_tokens":5,'
+                '"reasoning_output_tokens":2,"total_tokens":25}}'
+            ),
+        ]
+    )
+
+    summary = harness.parse_codex_trajectory({"stdout": stdout, "stderr": "not-json"})
+
+    assert summary["json_line_count"] == 6
+    assert summary["invalid_json_line_count"] == 1
+    assert summary["event_counts"] == {
+        "item.completed": 2,
+        "item.started": 1,
+        "thread.started": 1,
+        "turn.completed": 1,
+        "turn.started": 1,
+    }
+    assert summary["thread_ids"] == ["thread-123"]
+    assert summary["turn_completed_count"] == 1
+    assert summary["latest_turn_usage"]["total_tokens"] == 25
+    assert summary["command_execution"]["completed"] == 1
+    assert summary["command_execution"]["succeeded"] == 1
+    assert summary["command_execution"]["aggregated_output_ccr_bytes"] == 1536
+    assert summary["command_execution"]["aggregated_output_size_estimate"] == 1536
+    assert summary["command_execution"]["commands"][0]["command"] == (
+        "git status --short"
+    )
+    assert summary["command_execution"]["commands"][0]["aggregated_output"] == (
+        "<<ccr:abc,string,1.5KB>>"
+    )
+    assert summary["agent_message"]["messages"][0]["text"] == "raw local debug note"
+
+
+def test_trajectory_comparison_requires_real_codex_json_events() -> None:
+    harness = _load_harness()
+    direct = harness.parse_codex_trajectory(
+        {
+            "stdout": (
+                '{"type":"item.completed","item":{"type":"command_execution",'
+                '"command":"one","status":"completed","exit_code":0,'
+                '"aggregated_output":"<<ccr:a,string,2KB>>"}}\n'
+            ),
+            "stderr": "",
+        }
+    )
+    proxy = harness.parse_codex_trajectory(
+        {
+            "stdout": (
+                '{"type":"item.completed","item":{"type":"command_execution",'
+                '"command":"two","status":"completed","exit_code":0,'
+                '"aggregated_output":"<<ccr:b,string,1KB>>"}}\n'
+            ),
+            "stderr": "",
+        }
+    )
+
+    comparison = harness._compare_trajectories(
+        [
+            {"lane": "direct", "trajectory_summary": direct},
+            {"lane": "proxy", "trajectory_summary": proxy},
+        ]
+    )
+
+    assert comparison["status"] == "complete"
+    assert comparison["direct"]["command_completed"] == 1
+    assert comparison["proxy"]["command_output_ccr_bytes"] == 1024
+    assert comparison["delta_proxy_minus_direct"]["command_output_ccr_bytes"] == -1024
+    assert comparison["delta_proxy_minus_direct"]["command_output_size_estimate"] == (
+        -1024
+    )
+    assert comparison["interpretation"] == {
+        "has_codex_json_events": True,
+        "same_completed_command_count": True,
+        "same_tool_output_size_estimate": False,
+        "provider_usage_is_trajectory_normalized": False,
+    }
+
+
 def test_token_summary_comparison_marks_cost_missing_when_unreported() -> None:
     harness = _load_harness()
 
@@ -704,6 +956,74 @@ def test_token_summary_comparison_marks_cost_missing_when_unreported() -> None:
         "cost_status": "unavailable",
         "fail_reasons": [],
         "missing_reasons": ["cost_missing"],
+    }
+
+
+def test_overall_usefulness_prioritizes_observed_account_capacity() -> None:
+    harness = _load_harness()
+    token_comparison = harness._compare_token_summaries(
+        [
+            {
+                "lane": "direct",
+                "token_summary": harness.parse_token_summary(
+                    {
+                        "stdout": "input=100 cached=80 output=10 reasoning=0 total=110\n",
+                        "stderr": "",
+                    }
+                ),
+            },
+            {
+                "lane": "proxy",
+                "token_summary": harness.parse_token_summary(
+                    {
+                        "stdout": "input=130 cached=120 output=10 reasoning=0 total=140\n",
+                        "stderr": "",
+                    }
+                ),
+            },
+        ]
+    )
+
+    overall = harness._overall_usefulness(
+        account_comparison={
+            "status": "observed",
+            "usefulness": "pass",
+            "reason": "proxy_not_worse",
+            "fail_reasons": [],
+        },
+        token_comparison=token_comparison,
+        minimum_input_token_floor={
+            "enabled": True,
+            "ok": True,
+            "reason": None,
+            "minimum_combined_input_tokens": 1,
+            "combined_input_tokens": 230,
+        },
+    )
+
+    assert token_comparison["mvp_usefulness"]["status"] == "incomplete"
+    assert token_comparison["mvp_usefulness"]["fail_reasons"] == []
+    assert token_comparison["mvp_usefulness"]["warning_reasons"] == [
+        "proxy_total_tokens_worse"
+    ]
+    assert token_comparison["mvp_usefulness"]["checks"]["total_tokens_not_worse"] == {
+        "ok": False,
+        "delta_proxy_minus_direct": 30,
+        "diagnostic_only": True,
+        "ignored_because": "billing_equivalent_input_not_worse",
+    }
+    assert overall == {
+        "status": "pass",
+        "scope": "account_capacity",
+        "reason": "proxy_not_worse",
+        "fail_reasons": [],
+        "missing_reasons": [],
+        "account_usefulness": "pass",
+        "provider_diagnostic_status": "pass",
+        "provider_diagnostic_fail_reasons": [],
+        "provider_diagnostic_missing_reasons": ["cost_missing"],
+        "provider_diagnostic_warning_reasons": ["proxy_total_tokens_worse"],
+        "cost_status": "missing",
     }
 
 
@@ -931,7 +1251,10 @@ def test_agent90_usefulness_execute_writes_token_summary_artifacts(
             str(docker_bin),
             "--db-window-grace-seconds",
             "17",
+            "--lane-order",
+            "proxy,direct",
             "--skip-preflight",
+            "--skip-account-snapshots",
             "--execute",
             "--query-db",
         ],
@@ -950,10 +1273,14 @@ def test_agent90_usefulness_execute_writes_token_summary_artifacts(
     proxy_summary = json.loads(
         (artifact_dir / "proxy" / "token-summary.json").read_text()
     )
+    direct_trajectory = json.loads(
+        (artifact_dir / "direct" / "trajectory-summary.json").read_text()
+    )
     summary = json.loads((artifact_dir / "summary.json").read_text())
     db_result = json.loads(
         (artifact_dir / "proxy" / "db-proof-result.json").read_text()
     )
+    db_sql = (artifact_dir / "proxy" / "db-proof.sql").read_text()
 
     assert (
         (artifact_dir / "direct" / "summary-lines.txt")
@@ -967,6 +1294,16 @@ def test_agent90_usefulness_execute_writes_token_summary_artifacts(
     assert proxy_summary["complete"] is True
     assert proxy_summary["total_tokens"] == 990
     assert proxy_summary["cost_usd"] == "0.001"
+    assert direct_trajectory["json_line_count"] == 0
+    assert summary["lane_order"] == ["proxy", "direct"]
+    assert [lane["lane"] for lane in summary["results"]] == ["proxy", "direct"]
+    assert summary["trajectory_comparison"]["status"] == "complete"
+    assert summary["trajectory_comparison"]["interpretation"] == {
+        "has_codex_json_events": False,
+        "same_completed_command_count": True,
+        "same_tool_output_size_estimate": True,
+        "provider_usage_is_trajectory_normalized": False,
+    }
     assert summary["token_comparison"]["status"] == "complete"
     assert summary["token_comparison"]["delta_proxy_minus_direct"] == {
         "cached_input_tokens": 50,
@@ -1014,42 +1351,18 @@ def test_agent90_usefulness_execute_writes_token_summary_artifacts(
         "CODEX_LITELLM_REASONING_EFFORT": "medium",
         "LITELLM_PROXY_RUN_MARKER": "AGENT90_FAKE",
     }
-    assert (
-        "compression_config_snapshots"
-        in (artifact_dir / "proxy" / "db-proof.sql").read_text()
-    )
-    assert (
-        "litellm_proxy_run_marker' = 'AGENT90_FAKE'"
-        in (artifact_dir / "proxy" / "db-proof.sql").read_text()
-    )
-    assert (
-        "'agent-90' as expected_strategy_name"
-        in (artifact_dir / "proxy" / "db-proof.sql").read_text()
-    )
-    assert (
-        "'aggregate' as proof_row_type"
-        in (artifact_dir / "proxy" / "db-proof.sql").read_text()
-    )
-    assert (
-        "aggregate_cached_input_ratio"
-        in (artifact_dir / "proxy" / "db-proof.sql").read_text()
-    )
-    assert (
-        "distinct_stable_input_prefix_hashes"
-        in (artifact_dir / "proxy" / "db-proof.sql").read_text()
-    )
-    assert (
-        "interval '17 seconds'" in (artifact_dir / "proxy" / "db-proof.sql").read_text()
-    )
-    assert "<marker>" not in (artifact_dir / "proxy" / "db-proof.sql").read_text()
-    assert (
-        "<proxy_started_at_utc>"
-        not in (artifact_dir / "proxy" / "db-proof.sql").read_text()
-    )
-    assert (
-        "<proxy_ended_at_utc>"
-        not in (artifact_dir / "proxy" / "db-proof.sql").read_text()
-    )
+    assert "compression_config_snapshots" in db_sql
+    assert summary["results"][0]["started_at"] in db_sql
+    assert summary["results"][0]["ended_at"] in db_sql
+    assert "litellm_proxy_run_marker' = 'AGENT90_FAKE'" in db_sql
+    assert "'agent-90' as expected_strategy_name" in db_sql
+    assert "'aggregate' as proof_row_type" in db_sql
+    assert "aggregate_cached_input_ratio" in db_sql
+    assert "distinct_stable_input_prefix_hashes" in db_sql
+    assert "interval '17 seconds'" in db_sql
+    assert "<marker>" not in db_sql
+    assert "<proxy_started_at_utc>" not in db_sql
+    assert "<proxy_ended_at_utc>" not in db_sql
     assert (
         "proxy-request agent-90 provider_reported 900 300 0.001"
         in (artifact_dir / "proxy" / "db-proof.stdout.txt").read_text()
@@ -1091,6 +1404,99 @@ def test_agent90_usefulness_execute_writes_token_summary_artifacts(
     assert summary["proxy_db_rows_query_file"].endswith("proxy/db-proof-rows.sql")
 
 
+def test_agent90_usefulness_execute_multiturn_aggregates_token_floor(
+    tmp_path: Path,
+) -> None:
+    direct_bin = tmp_path / "direct-codex"
+    proxy_bin = tmp_path / "proxy-codex"
+    direct_bin.write_text(
+        "#!/usr/bin/env python3\n"
+        "import json, sys\n"
+        "print(json.dumps({'type':'thread.started','thread_id':'direct-thread'}))\n"
+        "print(json.dumps({'type':'turn.completed','usage':{"
+        "'input_tokens':100000,'cached_input_tokens':40000,"
+        "'output_tokens':100,'reasoning_output_tokens':0,"
+        "'total_tokens':100100}}))\n"
+        "assert ('resume' not in sys.argv) or ('direct-thread' in sys.argv)\n"
+    )
+    proxy_bin.write_text(
+        "#!/usr/bin/env python3\n"
+        "import json, sys\n"
+        "print(json.dumps({'type':'thread.started','thread_id':'proxy-thread'}))\n"
+        "print(json.dumps({'type':'turn.completed','usage':{"
+        "'input_tokens':90000,'cached_input_tokens':45000,"
+        "'output_tokens':90,'reasoning_output_tokens':0,"
+        "'total_tokens':90090}}))\n"
+        "assert ('resume' not in sys.argv) or ('proxy-thread' in sys.argv)\n"
+    )
+    direct_bin.chmod(0o755)
+    proxy_bin.chmod(0o755)
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/e2e_agent90_usefulness.py",
+            "--marker",
+            "AGENT90_MULTI_EXEC",
+            "--artifact-root",
+            str(tmp_path / "artifacts"),
+            "--task-lines",
+            "3",
+            "--session-turns",
+            "3",
+            "--min-combined-input-tokens",
+            "150000",
+            "--codex-bin",
+            str(direct_bin),
+            "--proxy-bin",
+            str(proxy_bin),
+            "--skip-preflight",
+            "--skip-account-snapshots",
+            "--execute",
+        ],
+        check=True,
+        cwd=REPO_ROOT,
+        text=True,
+        capture_output=True,
+    )
+
+    artifact_dir = tmp_path / "artifacts" / "AGENT90_MULTI_EXEC"
+    summary = json.loads((artifact_dir / "summary.json").read_text())
+    direct_result = json.loads((artifact_dir / "direct" / "result.json").read_text())
+    proxy_result = json.loads((artifact_dir / "proxy" / "result.json").read_text())
+    direct_turn_2_command = json.loads(
+        (artifact_dir / "direct" / "turns" / "02" / "command.json").read_text()
+    )
+
+    assert "agent90_usefulness=ok" in result.stdout
+    assert direct_result["turn_count"] == 3
+    assert direct_result["session_id"] == "direct-thread"
+    assert proxy_result["session_id"] == "proxy-thread"
+    assert "resume" in direct_turn_2_command
+    assert "direct-thread" in direct_turn_2_command
+    assert summary["token_comparison"]["direct"]["input_tokens"] == 100000
+    assert summary["token_comparison"]["proxy"]["input_tokens"] == 90000
+    assert summary["results"][0]["token_summary"]["usage_source"] == (
+        "codex_json_turn_completed_cumulative_latest_across_resumed_session"
+    )
+    assert summary["minimum_input_token_floor"] == {
+        "enabled": True,
+        "minimum_combined_input_tokens": 150000,
+        "combined_input_tokens": 190000,
+        "direct_input_tokens": 100000,
+        "proxy_input_tokens": 90000,
+        "ok": True,
+        "reason": None,
+    }
+    assert summary["token_comparison"]["completion_contract"] == {
+        "status": "pass",
+        "scope": "provider_usage_cache",
+        "cost_status": "unavailable",
+        "fail_reasons": [],
+        "missing_reasons": ["cost_missing"],
+    }
+
+
 def test_agent90_usefulness_execute_passes_usage_cache_when_cost_unavailable(
     tmp_path: Path,
 ) -> None:
@@ -1122,6 +1528,7 @@ def test_agent90_usefulness_execute_passes_usage_cache_when_cost_unavailable(
             "--proxy-bin",
             str(proxy_bin),
             "--skip-preflight",
+            "--skip-account-snapshots",
             "--execute",
         ],
         check=True,
@@ -1178,6 +1585,7 @@ def test_agent90_usefulness_execute_fails_when_cache_accounting_regresses(
             "--proxy-bin",
             str(proxy_bin),
             "--skip-preflight",
+            "--skip-account-snapshots",
             "--execute",
         ],
         cwd=REPO_ROOT,
@@ -1189,7 +1597,8 @@ def test_agent90_usefulness_execute_fails_when_cache_accounting_regresses(
     summary = json.loads((artifact_dir / "summary.json").read_text())
 
     assert result.returncode == 2
-    assert "mvp_usefulness=fail" in result.stderr
+    assert "scope=provider_usage_cache" in result.stderr
+    assert "proxy_billing_equivalent_input_worse" in result.stderr
     assert summary["token_comparison"]["mvp_usefulness"]["status"] == "fail"
     assert summary["token_comparison"]["mvp_usefulness"]["fail_reasons"] == [
         "proxy_billing_equivalent_input_worse",

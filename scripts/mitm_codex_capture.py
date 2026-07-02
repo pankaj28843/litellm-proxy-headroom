@@ -13,8 +13,8 @@ from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_ARTIFACT_ROOT = REPO_ROOT / "tmp" / "codex-mitm"
-DEFAULT_MODEL = "gpt-5.4-mini"
-DEFAULT_REASONING_EFFORT = "low"
+DEFAULT_MODEL = "gpt-5.5"
+DEFAULT_REASONING_EFFORT = "xhigh"
 DEFAULT_MODEL_VERBOSITY = "low"
 DEFAULT_DIRECT_MODEL_PROVIDER = "openai"
 DEFAULT_HTTP_CAPTURE_MODEL_PROVIDER = "openai-http-capture"
@@ -50,7 +50,9 @@ def _free_port() -> int:
         return int(sock.getsockname()[1])
 
 
-def _wait_for_file(path: Path, *, process: subprocess.Popen[str], timeout: float) -> None:
+def _wait_for_file(
+    path: Path, *, process: subprocess.Popen[str], timeout: float
+) -> None:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         if path.exists():
@@ -351,7 +353,10 @@ def _latest_thread_id(stdout: str) -> str | None:
 def execute_plan(plan: dict[str, Any], *, force: bool, timeout: int) -> int:
     artifact_dir = Path(plan["artifact_dir"])
     if artifact_dir.exists() and not force:
-        print(f"codex_mitm_capture=failed artifact_dir_exists path={artifact_dir}", file=sys.stderr)
+        print(
+            f"codex_mitm_capture=failed artifact_dir_exists path={artifact_dir}",
+            file=sys.stderr,
+        )
         return 1
     artifact_dir.mkdir(parents=True, exist_ok=True)
     _write_json(artifact_dir / "plan.json", _public_plan(plan))
@@ -447,7 +452,9 @@ def execute_plan(plan: dict[str, Any], *, force: bool, timeout: int) -> int:
         _write_text(Path(plan["codex"]["stderr"]), "".join(stderr_parts))
         flow_count = 0
         if capture_path.exists():
-            flow_count = sum(1 for line in capture_path.read_text().splitlines() if line.strip())
+            flow_count = sum(
+                1 for line in capture_path.read_text().splitlines() if line.strip()
+            )
         result = {
             "marker": plan["marker"],
             "lane": plan["lane"],
@@ -496,7 +503,9 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--model", default=DEFAULT_MODEL)
     parser.add_argument("--litellm-url", default="http://10.20.30.1:24040")
     parser.add_argument("--analytics-url", default="http://127.0.0.1:28010")
-    parser.add_argument("--direct-model-provider", default=DEFAULT_DIRECT_MODEL_PROVIDER)
+    parser.add_argument(
+        "--direct-model-provider", default=DEFAULT_DIRECT_MODEL_PROVIDER
+    )
     parser.add_argument(
         "--http-capture-model-provider",
         default=DEFAULT_HTTP_CAPTURE_MODEL_PROVIDER,

@@ -7,6 +7,86 @@ model_list:
       codex_default_reasoning_level: xhigh
     litellm_params:
       model: chatgpt/gpt-5.5
+  - model_name: sonnet
+    model_info:
+      mode: responses
+      alias_for: gpt-5.5
+      display_name: Claude Sonnet alias via GPT-5.5
+      codex_default_reasoning_level: xhigh
+    litellm_params:
+      model: chatgpt/gpt-5.5
+  - model_name: opus
+    model_info:
+      mode: responses
+      alias_for: gpt-5.5
+      display_name: Claude Opus alias via GPT-5.5
+      codex_default_reasoning_level: xhigh
+    litellm_params:
+      model: chatgpt/gpt-5.5
+  - model_name: fable
+    model_info:
+      mode: responses
+      alias_for: gpt-5.5
+      display_name: Claude Fable alias via GPT-5.5
+      codex_default_reasoning_level: xhigh
+    litellm_params:
+      model: chatgpt/gpt-5.5
+  - model_name: claude-sonnet-5
+    model_info:
+      mode: responses
+      alias_for: gpt-5.5
+      display_name: Claude Sonnet 5 alias via GPT-5.5
+      codex_default_reasoning_level: xhigh
+    litellm_params:
+      model: chatgpt/gpt-5.5
+  - model_name: claude-opus-5
+    model_info:
+      mode: responses
+      alias_for: gpt-5.5
+      display_name: Claude Opus 5 alias via GPT-5.5
+      codex_default_reasoning_level: xhigh
+    litellm_params:
+      model: chatgpt/gpt-5.5
+  - model_name: claude-sonnet-4-6
+    model_info:
+      mode: responses
+      alias_for: gpt-5.5
+      display_name: Claude Sonnet 4.6 alias via GPT-5.5
+      codex_default_reasoning_level: xhigh
+    litellm_params:
+      model: chatgpt/gpt-5.5
+  - model_name: claude-opus-4-6
+    model_info:
+      mode: responses
+      alias_for: gpt-5.5
+      display_name: Claude Opus 4.6 alias via GPT-5.5
+      codex_default_reasoning_level: xhigh
+    litellm_params:
+      model: chatgpt/gpt-5.5
+  - model_name: claude-sonnet-4-5
+    model_info:
+      mode: responses
+      alias_for: gpt-5.5
+      display_name: Claude Sonnet 4.5 alias via GPT-5.5
+      codex_default_reasoning_level: xhigh
+    litellm_params:
+      model: chatgpt/gpt-5.5
+  - model_name: claude-opus-4-5
+    model_info:
+      mode: responses
+      alias_for: gpt-5.5
+      display_name: Claude Opus 4.5 alias via GPT-5.5
+      codex_default_reasoning_level: xhigh
+    litellm_params:
+      model: chatgpt/gpt-5.5
+  - model_name: claude-fable-5
+    model_info:
+      mode: responses
+      alias_for: gpt-5.5
+      display_name: Claude Fable 5 alias via GPT-5.5
+      codex_default_reasoning_level: xhigh
+    litellm_params:
+      model: chatgpt/gpt-5.5
   - model_name: gpt-5.4
     model_info:
       mode: responses

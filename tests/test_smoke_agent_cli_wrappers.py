@@ -44,7 +44,7 @@ def test_smoke_command_shapes_cover_agent_cli_entrypoints() -> None:
         "json",
         "--no-tools",
         "--thinking",
-        "low",
+        "xhigh",
     ]
 
 
@@ -52,17 +52,22 @@ def test_smoke_env_disables_compression_and_analytics_mcp() -> None:
     module = load_smoke_module()
 
     env = module.common_env(
-        model="gpt-5.4-mini",
+        model="gpt-5.5",
         litellm_url="http://10.20.30.1:24040",
         marker="marker-123",
     )
 
     assert env["CODEX_LITELLM_COMPRESSION_MODE"] == "off"
-    assert env["CODEX_LITELLM_REASONING_EFFORT"] == "low"
+    assert env["CODEX_LITELLM_REASONING_EFFORT"] == "xhigh"
+    assert env["CLAUDE_LITELLM_MODEL"] == "sonnet"
+    assert env["CLAUDE_LITELLM_EFFORT"] == "xhigh"
     assert env["CLAUDE_LITELLM_DISABLE_ANALYTICS_MCP"] == "1"
     assert env["OPENCODE_LITELLM_DISABLE_ANALYTICS_MCP"] == "1"
-    assert env["COPILOT_LITELLM_MODEL"] == "gpt-5.4-mini"
-    assert env["PI_LITELLM_SMALL_MODEL"] == "gpt-5.4-mini"
+    assert env["OPENCODE_LITELLM_VARIANT"] == "xhigh"
+    assert env["COPILOT_LITELLM_MODEL"] == "gpt-5.5"
+    assert env["COPILOT_LITELLM_REASONING_EFFORT"] == "xhigh"
+    assert env["PI_LITELLM_SMALL_MODEL"] == "gpt-5.5"
+    assert env["PI_LITELLM_THINKING"] == "xhigh"
 
 
 def test_smoke_redacts_litellm_secrets() -> None:

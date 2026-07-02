@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import sys
 from pathlib import Path
 
@@ -22,7 +23,6 @@ from litellm_proxy_headroom.agent_cli.managed_home import (  # noqa: E402
     option_value,
     preference_value,
     project_name_from_cwd,
-    sync_native_file,
     sync_native_state,
     truthy_env,
     write_preferences,
@@ -31,6 +31,15 @@ from litellm_proxy_headroom.agent_cli.managed_home import (  # noqa: E402
 MANAGED_HOME_NAME = ".claude-headroom"
 LOCAL_BACKUP_TAG = "claude-headroom-local-backup"
 EFFORT_VALUES = {"low", "medium", "high", "xhigh", "max"}
+MANAGED_CONFIG_NAMES = {
+    ".config",
+    "backups",
+    "bin",
+    "cache",
+    "config.json",
+    "settings.json",
+    "settings.local.json",
+}
 PERMISSION_MODE_VALUES = {
     "acceptEdits",
     "auto",
@@ -61,13 +70,6 @@ def default_native_home() -> Path:
     return default_home_path(
         ".claude",
         fallback=REPO_ROOT / "tmp" / "missing-native-claude-home",
-    )
-
-
-def default_native_config_file() -> Path:
-    return default_home_path(
-        ".claude.json",
-        fallback=REPO_ROOT / "tmp" / "missing-native-claude.json",
     )
 
 
@@ -163,6 +165,47 @@ def real_claude() -> str:
         die("could not find a claude binary on PATH other than this wrapper.", code=127)
 
 
+def write_managed_top_level_config(home: Path, *, preferences: dict[str, str]) -> None:
+    target = home / ".claude.json"
+    if target.is_symlink():
+        target.unlink()
+    elif target.exists() and not target.is_file():
+        die(f"{target} must be a file or symlink.")
+    payload = {
+        "hasCompletedOnboarding": True,
+        "litellmProxy": {
+            "backend_model": "gpt-5.5",
+            "effort": preferences.get("effort", "xhigh"),
+            "model": preferences.get("model", "sonnet"),
+            "reasoning_effort": preferences.get("effort", "xhigh"),
+        },
+        "projects": {},
+    }
+    tmp_path = target.with_suffix(f"{target.suffix}.{os.getpid()}.tmp")
+    tmp_path.write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    tmp_path.replace(target)
+
+
+def remove_managed_path(path: Path) -> None:
+    if path.is_symlink() or path.is_file():
+        path.unlink()
+    elif path.is_dir():
+        shutil.rmtree(path)
+
+
+def remove_stale_managed_config(home: Path) -> None:
+    for name in MANAGED_CONFIG_NAMES:
+        remove_managed_path(home / name)
+    for child in list(home.iterdir()):
+        if (
+            child.name.startswith("settings") and ".json" in child.name
+        ) or ".config." in child.name:
+            remove_managed_path(child)
+
+
 def resolved_preferences(
     argv: list[str], preferences: dict[str, str], *, dotenv_keys: set[str]
 ) -> dict[str, str]:
@@ -175,7 +218,7 @@ def resolved_preferences(
             option_names=("--model",),
             preferences=preferences,
             dotenv_keys=dotenv_keys,
-            default="gpt-5.5",
+            default="sonnet",
         ),
         "effort": resolve_preference(
             argv=argv,
@@ -184,6 +227,7 @@ def resolved_preferences(
             option_names=("--effort",),
             preferences=preferences,
             dotenv_keys=dotenv_keys,
+            default="xhigh",
             allowed_values=EFFORT_VALUES,
         ),
         "permission_mode": resolve_preference(
@@ -206,7 +250,7 @@ def default_extra_args(
         extra_args.extend(
             [
                 "--setting-sources",
-                os.environ.get("CLAUDE_LITELLM_SETTING_SOURCES", "project"),
+                os.environ.get("CLAUDE_LITELLM_SETTING_SOURCES", ""),
             ]
         )
     if mcp_config is not None and not has_option(argv, "--mcp-config"):
@@ -223,7 +267,7 @@ def default_extra_args(
             ]
         )
     if not has_option(argv, "--model"):
-        extra_args.extend(["--model", preferences.get("model", "gpt-5.5")])
+        extra_args.extend(["--model", preferences.get("model", "sonnet")])
     if preferences.get("effort") and not has_option(argv, "--effort"):
         extra_args.extend(["--effort", preferences["effort"]])
     if preferences.get("permission_mode") and not has_option(argv, "--permission-mode"):
@@ -288,12 +332,8 @@ def main(argv: list[str]) -> int:
     native_home = Path(
         os.environ.get("CLAUDE_LITELLM_NATIVE_HOME", default_native_home())
     ).expanduser()
-    native_config_file = Path(
-        os.environ.get(
-            "CLAUDE_LITELLM_NATIVE_CONFIG_FILE", default_native_config_file()
-        )
-    ).expanduser()
     home.mkdir(parents=True, exist_ok=True)
+    remove_stale_managed_config(home)
     if truthy_env("CLAUDE_LITELLM_LINK_NATIVE_STATE", True):
         sync_native_state(
             native_home=native_home,
@@ -309,15 +349,11 @@ def main(argv: list[str]) -> int:
             excluded_globs=("settings*.json*", "*.config.*"),
             backup_tag=LOCAL_BACKUP_TAG,
         )
-        sync_native_file(
-            native_file=native_config_file,
-            managed_file=home / ".claude.json",
-            backup_tag=LOCAL_BACKUP_TAG,
-        )
     preferences = resolved_preferences(
         argv, load_preferences(home), dotenv_keys=dotenv_keys
     )
     write_preferences(home, preferences)
+    write_managed_top_level_config(home, preferences=preferences)
     os.environ["CLAUDE_CONFIG_DIR"] = str(home)
     if truthy_env("CLAUDE_LITELLM_ISOLATE_HOME", True):
         os.environ["HOME"] = str(home)

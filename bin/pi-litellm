@@ -31,6 +31,7 @@ MANAGED_HOME_NAME = ".pi-headroom"
 LOCAL_BACKUP_TAG = "pi-headroom-local-backup"
 PROVIDER_ID = "litellm"
 MODEL_RE = re.compile(r"^[A-Za-z0-9_.:/-]+$")
+THINKING_VALUES = {"off", "minimal", "low", "medium", "high", "xhigh"}
 NO_MODEL_COMMANDS = {
     "-h",
     "--help",
@@ -102,6 +103,10 @@ def has_model_arg(argv: list[str]) -> bool:
     return option_value(argv, "--model") is not None
 
 
+def has_thinking_arg(argv: list[str]) -> bool:
+    return option_value(argv, "--thinking") is not None
+
+
 def has_provider_arg(argv: list[str]) -> bool:
     return option_value(argv, "--provider") is not None
 
@@ -157,11 +162,28 @@ def resolved_preferences(
             preference_key="small_model",
             preferences=preferences,
             dotenv_keys=dotenv_keys,
-            default="gpt-5.4-mini",
+            default="gpt-5.5",
         ),
         env_name="PI_LITELLM_SMALL_MODEL",
     )
-    return {**preferences, "model": model, "small_model": small_model}
+    thinking = preference_value(
+        cli_value=option_value(argv, "--thinking"),
+        env_name="PI_LITELLM_THINKING",
+        preference_key="thinking",
+        preferences=preferences,
+        dotenv_keys=dotenv_keys,
+        default="xhigh",
+    )
+    if thinking not in THINKING_VALUES:
+        die(
+            "PI_LITELLM_THINKING must be one of off, minimal, low, medium, high, or xhigh."
+        )
+    return {
+        **preferences,
+        "model": model,
+        "small_model": small_model,
+        "thinking": thinking,
+    }
 
 
 def model_entry(model: str) -> dict[str, object]:
@@ -222,7 +244,7 @@ def real_pi() -> str:
         die("could not find a pi binary on PATH other than this wrapper.", code=127)
 
 
-def default_extra_args(argv: list[str], *, model: str) -> list[str]:
+def default_extra_args(argv: list[str], *, model: str, thinking: str) -> list[str]:
     if not should_add_model_args(argv):
         return []
     provider = option_value(argv, "--provider")
@@ -240,6 +262,8 @@ def default_extra_args(argv: list[str], *, model: str) -> list[str]:
         extra_args.extend(["--provider", PROVIDER_ID])
     if not has_model_arg(argv):
         extra_args.extend(["--model", model])
+    if thinking and not has_thinking_arg(argv):
+        extra_args.extend(["--thinking", thinking])
     return extra_args
 
 
@@ -295,6 +319,7 @@ def main(argv: list[str]) -> int:
     write_preferences(home, preferences)
     model = preferences["model"]
     small_model = preferences["small_model"]
+    thinking = preferences["thinking"]
     write_config(
         home / "models.json",
         models_config(
@@ -315,7 +340,7 @@ def main(argv: list[str]) -> int:
     executable = real_pi()
     os.execvpe(
         executable,
-        [executable, *default_extra_args(argv, model=model), *argv],
+        [executable, *default_extra_args(argv, model=model, thinking=thinking), *argv],
         os.environ.copy(),
     )
     return 127

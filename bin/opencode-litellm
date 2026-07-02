@@ -32,6 +32,7 @@ MANAGED_HOME_NAME = ".opencode-headroom"
 LOCAL_BACKUP_TAG = "opencode-headroom-local-backup"
 PROVIDER_ID = "litellm"
 MODEL_RE = re.compile(r"^[A-Za-z0-9_.:/-]+$")
+VARIANT_VALUES = {"low", "medium", "high", "xhigh", "max", "minimal"}
 NO_MODEL_COMMANDS = {
     "acp",
     "agent",
@@ -90,6 +91,10 @@ def has_model_arg(argv: list[str]) -> bool:
     return option_value(argv, "-m", "--model") is not None
 
 
+def has_variant_arg(argv: list[str]) -> bool:
+    return option_value(argv, "--variant") is not None
+
+
 def model_from_arg(argv: list[str]) -> str | None:
     value = option_value(argv, "-m", "--model")
     if not value:
@@ -99,11 +104,40 @@ def model_from_arg(argv: list[str]) -> str | None:
     return value
 
 
+def first_command_index(argv: list[str]) -> int | None:
+    options_with_values = {"-m", "--model", "--variant"}
+    skip_next = False
+    for index, arg in enumerate(argv):
+        if skip_next:
+            skip_next = False
+            continue
+        if arg in options_with_values:
+            skip_next = True
+            continue
+        if arg.startswith("-"):
+            continue
+        return index
+    return None
+
+
 def should_add_model_arg(argv: list[str]) -> bool:
     if has_model_arg(argv):
         return False
-    first_command = next((arg for arg in argv if not arg.startswith("-")), "")
+    command_index = first_command_index(argv)
+    first_command = "" if command_index is None else argv[command_index]
     return first_command not in NO_MODEL_COMMANDS
+
+
+def add_run_variant_arg(argv: list[str], *, variant: str) -> list[str]:
+    if not variant or has_variant_arg(argv):
+        return argv
+    command_index = first_command_index(argv)
+    if command_index is None or argv[command_index] != "run":
+        return argv
+    result = list(argv)
+    result.insert(command_index + 1, "--variant")
+    result.insert(command_index + 2, variant)
+    return result
 
 
 def default_native_xdg_path(kind: str) -> Path:
@@ -164,11 +198,28 @@ def resolved_preferences(
             preference_key="small_model",
             preferences=preferences,
             dotenv_keys=dotenv_keys,
-            default="gpt-5.4-mini",
+            default="gpt-5.5",
         ),
         env_name="OPENCODE_LITELLM_SMALL_MODEL",
     )
-    return {**preferences, "model": model, "small_model": small_model}
+    variant = preference_value(
+        cli_value=option_value(argv, "--variant"),
+        env_name="OPENCODE_LITELLM_VARIANT",
+        preference_key="variant",
+        preferences=preferences,
+        dotenv_keys=dotenv_keys,
+        default="xhigh",
+    )
+    if variant not in VARIANT_VALUES:
+        die(
+            "OPENCODE_LITELLM_VARIANT must be one of low, medium, high, xhigh, max, or minimal."
+        )
+    return {
+        **preferences,
+        "model": model,
+        "small_model": small_model,
+        "variant": variant,
+    }
 
 
 def model_config(
@@ -289,6 +340,7 @@ def main(argv: list[str]) -> int:
     write_preferences(home, preferences)
     model = preferences["model"]
     small_model = preferences["small_model"]
+    variant = preferences["variant"]
     config_dir = home / "config-dir"
     xdg_config_home = home / "xdg-config"
     xdg_data_home = home / "xdg-data"
@@ -329,7 +381,11 @@ def main(argv: list[str]) -> int:
     extra_args = (
         ["--model", f"{PROVIDER_ID}/{model}"] if should_add_model_arg(argv) else []
     )
-    os.execvpe(executable, [executable, *extra_args, *argv], os.environ.copy())
+    os.execvpe(
+        executable,
+        [executable, *extra_args, *add_run_variant_arg(argv, variant=variant)],
+        os.environ.copy(),
+    )
     return 127
 
 

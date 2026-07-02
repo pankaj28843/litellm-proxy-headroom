@@ -49,7 +49,8 @@ secondary guards after the real path is known to work.
 
 For Codex compression usefulness specifically, the primary proof is actual
 `codex exec --json` usage through direct Codex and `./bin/codex-litellm`.
-`gpt-5.4-mini` is for smoke validation only; practical proof uses `gpt-5.5`.
+Wrapper route and install checks use `gpt-5.5` with xhigh reasoning; practical
+proof also uses `gpt-5.5`.
 Judge aggregate provider-reported input, cached input, output, reasoning, total
 tokens, and cost when present across the whole Codex turn/provider-call
 sequence. A dashboard row, estimated tokenizer delta, smoke/demo fixture, or

@@ -360,8 +360,8 @@ For compression usefulness claims, the smoke suite and dashboard stats are not
 enough. Use actual `codex exec --json` direct-vs-proxy runs and bracket Codex
 lanes with first-party account snapshots from
 `python3 scripts/codex_account_snapshot.py`, which uses `codex app-server
---stdio` JSON-RPC `account/rateLimits/read` and `account/usage/read`. Smoke
-with `gpt-5.4-mini`; judge practical usefulness with `gpt-5.5`; compare
+--stdio` JSON-RPC `account/rateLimits/read` and `account/usage/read`. Wrapper
+route checks and practical usefulness proofs both use `gpt-5.5`; compare
 five-hour quota, weekly quota, credits, reset credits, and account token
 activity first.
 Current Codex practical proof must use 8-12 resumed `gpt-5.5` user-message

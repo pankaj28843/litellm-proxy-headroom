@@ -14,7 +14,7 @@ from shlex import quote
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_LITELLM_URL = "http://10.20.30.1:24040"
 DEFAULT_REMOTE_HOSTS = "pankaj@10.20.30.102 neeraj@10.20.30.131"
-DEFAULT_MODEL = "gpt-5.4-mini"
+DEFAULT_MODEL = "gpt-5.5"
 SECRET_PATTERNS = (
     re.compile(r"sk-[A-Za-z0-9_-]+"),
     re.compile(r"(LITELLM_MASTER_KEY=)[^\s]+"),
@@ -147,7 +147,7 @@ def command_for(spec: WrapperSpec, executable: str, marker: str) -> list[str]:
             "json",
             "--no-tools",
             "--thinking",
-            "low",
+            "xhigh",
             "-p",
             prompt,
         ]
@@ -158,15 +158,19 @@ def common_env(*, model: str, litellm_url: str, marker: str) -> dict[str, str]:
     values = {
         "LITELLM_PROXY_RUN_MARKER": marker,
         "CODEX_LITELLM_MODEL": model,
-        "CODEX_LITELLM_REASONING_EFFORT": "low",
-        "CLAUDE_LITELLM_MODEL": model,
+        "CODEX_LITELLM_REASONING_EFFORT": "xhigh",
+        "CLAUDE_LITELLM_MODEL": "sonnet",
+        "CLAUDE_LITELLM_EFFORT": "xhigh",
         "OPENCODE_LITELLM_MODEL": model,
         "OPENCODE_LITELLM_SMALL_MODEL": model,
+        "OPENCODE_LITELLM_VARIANT": "xhigh",
         "COPILOT_LITELLM_MODEL": model,
         "COPILOT_LITELLM_PROVIDER_MODEL_ID": model,
         "COPILOT_LITELLM_WIRE_MODEL": model,
+        "COPILOT_LITELLM_REASONING_EFFORT": "xhigh",
         "PI_LITELLM_MODEL": model,
         "PI_LITELLM_SMALL_MODEL": model,
+        "PI_LITELLM_THINKING": "xhigh",
     }
     for spec in WRAPPERS:
         values[f"{spec.prefix}_LITELLM_COMPRESSION_MODE"] = "off"

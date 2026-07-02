@@ -180,7 +180,7 @@ def resolved_model_settings(
         preference_key="model_reasoning_effort",
         preferences=preferences,
         dotenv_keys=dotenv_keys,
-        default=str(native_effort or ""),
+        default=str(native_effort or "xhigh"),
     )
     if effort not in {"", *REASONING_EFFORT_VALUES}:
         die(

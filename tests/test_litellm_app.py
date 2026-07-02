@@ -48,9 +48,22 @@ def test_rewrite_anthropic_system_string_into_user_string() -> None:
     ]
 
 
+def test_rewrite_anthropic_model_aliases_for_chatgpt_backend() -> None:
+    payload = {
+        "model": "claude-sonnet-5",
+        "system": "native anthropic system prompt",
+        "messages": [{"role": "user", "content": "say ok"}],
+    }
+
+    assert _rewrite_anthropic_system_as_user(payload) is True
+
+    assert "system" not in payload
+    assert payload["messages"][0]["content"].startswith("System instructions:")
+
+
 def test_rewrite_leaves_non_chatgpt_aliases_unchanged() -> None:
     payload = {
-        "model": "claude-sonnet-4-5",
+        "model": "native-anthropic-model",
         "system": "native anthropic system prompt",
         "messages": [{"role": "user", "content": "say ok"}],
     }

@@ -350,15 +350,15 @@ The passthrough-off experiment
 but failed provider/cache diagnostics; outbound MITM showed that `off` removes
 `client_metadata` and `prompt_cache_key`, so do not use that experiment as a
 savings path.
-Claude Code is still route-gated on the current
-ChatGPT-backed `gpt-5.x` deployment. OpenCode routes through LiteLLM but still
-has no cache-usefulness proof after the latest on/off practical comparison.
-GitHub Copilot CLI routes through LiteLLM BYOK after upgrading to Copilot CLI
-1.0.65 and a current three-call `gpt-5.5` practical series, but remains
-time-window/cache-unproven. Pi routes through LiteLLM after upgrading to Pi
-0.80.2 but is not useful on the latest `agent-90` versus compression-off
-practical proof. Do not claim cache/cost savings without an aggregate practical
-proof.
+Claude Code now routes through LiteLLM with the `sonnet` alias mapped to
+ChatGPT-backed `gpt-5.5` at `xhigh` effort, but still has no cache-usefulness
+proof. OpenCode routes through LiteLLM but still has no cache-usefulness proof
+after the latest on/off practical comparison. GitHub Copilot CLI routes through
+LiteLLM BYOK after upgrading to Copilot CLI 1.0.65 and a current three-call
+`gpt-5.5` practical series, but remains time-window/cache-unproven. Pi routes
+through LiteLLM after upgrading to Pi 0.80.2 but is not useful on the latest
+`agent-90` versus compression-off practical proof. Do not claim cache/cost
+savings without an aggregate practical proof.
 
 The next Codex usefulness proof must be longer than the historical one-turn
 artifacts: run 8-12 resumed `codex exec --json` user-message turns per lane
@@ -393,13 +393,14 @@ base URL used by both `OPENAI_BASE_URL` and the generated Codex provider. Set
 `CODEX_LITELLM_ANALYTICS_URL` when the analytics backend is not on
 `http://10.20.30.1:28010`; the wrapper normalizes it to the local analytics
 `/mcp/` endpoint. Set `CODEX_LITELLM_DISABLE_ANALYTICS_MCP=1` for remote
-wrapper installs that should talk only to LiteLLM. Set
+wrapper installs that should talk only to LiteLLM. The wrapper defaults to
+`gpt-5.5` with `model_reasoning_effort = "xhigh"`. Set
 `CODEX_LITELLM_REASONING_EFFORT` to `minimal`, `low`, `medium`, `high`, or
-`xhigh` when the isolated profile should pin Codex
-`model_reasoning_effort`. Set `CODEX_LITELLM_MODEL_VERBOSITY` to `low`,
-`medium`, or `high` when the isolated profile should pin Codex
-`model_verbosity`. The resolved model, reasoning effort, and verbosity are
-persisted under `~/.codex-headroom/litellm-preferences.json`.
+`xhigh` only when intentionally changing that isolated profile pin. Set
+`CODEX_LITELLM_MODEL_VERBOSITY` to `low`, `medium`, or `high` when the isolated
+profile should pin Codex `model_verbosity`. The resolved model, reasoning
+effort, and verbosity are persisted under
+`~/.codex-headroom/litellm-preferences.json`.
 
 `bin/pi-litellm` sets `PI_CODING_AGENT_DIR` to managed `~/.pi-headroom`, writes
 `models.json` with a custom `litellm` provider using the OpenAI Responses API,
@@ -408,8 +409,9 @@ entries. The generated config references `LITELLM_MASTER_KEY` as an environment
 variable and sends local `X-LLM-Proxy-*` attribution headers through Pi's
 documented custom-provider header config. It symlinks native Pi state except
 settings/config and generated `models.json`. The wrapper defaults to `gpt-5.5`;
-use `PI_LITELLM_MODEL=gpt-5.4-mini` only for smoke routing. The resolved
-model/small-model choices persist under `~/.pi-headroom/litellm-preferences.json`.
+it also defaults `PI_LITELLM_SMALL_MODEL=gpt-5.5` and
+`PI_LITELLM_THINKING=xhigh`. The resolved model, small-model, and thinking
+choices persist under `~/.pi-headroom/litellm-preferences.json`.
 Latest Pi
 practical proof compared normal `agent-90` with
 `PI_LITELLM_COMPRESSION_MODE=off`; normal compression used `27327` more total
@@ -420,9 +422,13 @@ still unavailable.
 `LITELLM_MASTER_KEY` to `ANTHROPIC_AUTH_TOKEN`, clears `ANTHROPIC_API_KEY` to
 avoid Claude Code auth-source conflicts, isolates `HOME` and
 `CLAUDE_CONFIG_DIR` to `~/.claude-headroom`, and writes a generated analytics
-MCP config there by default. It symlinks compatible native Claude state from
-`~/.claude` but excludes native settings/config/cache, then separately links
-the native top-level `~/.claude.json` onboarding/trust file. Set
+MCP config there by default. It passes an empty `--setting-sources` value by
+default so native/user/project Claude settings cannot leak stale auth helpers
+into wrapper sessions. It symlinks compatible native Claude state from
+`~/.claude` but excludes and purges managed settings/config/cache leftovers,
+then writes a small managed `.claude.json` showing the selected LiteLLM model
+and xhigh reasoning effort without importing native auth helpers, OAuth account
+state, MCP servers, or other config. Set
 `CLAUDE_LITELLM_HOME` to move that managed home, or
 `CLAUDE_LITELLM_STATE_DIR` to override the generated state directory in
 wrapper tests/scripts.
@@ -435,15 +441,12 @@ the generated MCP config and analytics tool allow-list. The wrapper also appends
 surface for analytics correlation. It preserves existing custom headers and
 does not write them to generated files. The wrapper validates URLs before
 writing managed config and never writes `LITELLM_MASTER_KEY` into `mcp.json`.
-It persists the resolved model, `--effort`, and `--permission-mode` under
-`~/.claude-headroom/litellm-preferences.json`.
-LiteLLM's Claude Code docs describe `/v1/messages` routing for non-Anthropic
-models, but the current deployment only has ChatGPT-backed `gpt-5.x` aliases.
-Fresh real Claude Code smoke reached LiteLLM and analytics, produced
-marker-correlated failed DB rows, and still failed with a 400 because that model
-group rejects Claude Code's system-message request shape. Claude Code remains
-route-gated until an Anthropic-compatible or otherwise Claude-compatible
-LiteLLM model route is proven.
+It defaults Claude Code to the public `sonnet` alias with `--effort xhigh`.
+LiteLLM maps `sonnet`, `opus`, `fable`, and selected `claude-*` aliases
+internally to `chatgpt/gpt-5.5`, and the local LiteLLM ASGI shim rewrites
+Claude Code's Anthropic `system` field into the first user message for those
+ChatGPT-backed aliases. It persists the resolved model, `--effort`, and
+`--permission-mode` under `~/.claude-headroom/litellm-preferences.json`.
 
 `bin/opencode-litellm` sets OpenCode's config and XDG state roots under the
 managed `~/.opencode-headroom` home by default, writes a generated
@@ -456,11 +459,11 @@ are not on `http://10.20.30.1:24040` and `http://10.20.30.1:28010`. Set
 `OPENCODE_LITELLM_DISABLE_ANALYTICS_MCP=1` for remote installs without analytics
 MCP access. The wrapper
 pins `--model litellm/gpt-5.5` for run-style commands unless the command
-already supplies `--model`, and persists the resolved model/small-model choices
-under `~/.opencode-headroom/litellm-preferences.json`.
-`opencode models litellm`, a real `gpt-5.4-mini`
-smoke run, and a real practical `gpt-5.5` series have reached LiteLLM with
-marker-correlated provider usage. The practical series currently has no
+already supplies `--model`, pins `--variant xhigh` for `run` unless the command
+already supplies `--variant`, and persists the resolved model, small-model, and
+variant choices under `~/.opencode-headroom/litellm-preferences.json`.
+`opencode models litellm` and real `gpt-5.5` wrapper runs have reached LiteLLM
+with marker-correlated provider usage. The practical series currently has no
 provider-reported cached input and no observed cost, so OpenCode routing is
 supported but cache usefulness is not proven.
 
@@ -478,14 +481,15 @@ requires its own supported `--model` selector, so the wrapper adds
 adds `--yolo` so non-interactive runs do not stop for approval prompts. Set
 `COPILOT_LITELLM_CLI_MODEL` for that Copilot-facing selector and
 `COPILOT_LITELLM_MODEL`, `COPILOT_LITELLM_PROVIDER_MODEL_ID`, or
-`COPILOT_LITELLM_WIRE_MODEL` for the LiteLLM provider model. It passes
-`X-LLM-Proxy-*` headers through `COPILOT_AGENT_REQUEST_HEADERS`; set
+`COPILOT_LITELLM_WIRE_MODEL` for the LiteLLM provider model. It defaults the
+provider wire route to `gpt-5.5` with `COPILOT_LITELLM_REASONING_EFFORT=xhigh`
+and writes the managed Copilot `config.json` with that reasoning effort. It
+passes `X-LLM-Proxy-*` headers through `COPILOT_AGENT_REQUEST_HEADERS`; set
 `COPILOT_LITELLM_COMPRESSION_MODE=off` for compression-disabled runs. Copilot
 provider preferences are persisted under
 `~/.copilot-headroom/litellm-preferences.json`. Current proof:
-real Copilot CLI `gpt-4.1` selector with `gpt-5.4-mini` provider wire model
-routes through LiteLLM and returns the expected smoke marker. Cache/cost
-usefulness is not claimed.
+real Copilot CLI runs with the `gpt-4.1` selector and a `gpt-5.5` provider wire
+model route through LiteLLM. Cache/cost usefulness is not claimed.
 
 For marker-capable wrappers, use `*_LITELLM_COMPRESSION_MODE=off` only as a
 proof baseline. Codex, Claude Code, OpenCode, Copilot, and Pi normalize that
@@ -505,11 +509,11 @@ lane, artifact paths, stop rules, and the proxy DB query template:
 uv run python scripts/e2e_agent90_usefulness.py --marker AGENT90_PROOF
 ```
 
-Run a cheap Codex CLI smoke proof with the mini model when you only need to
+Run a short Codex CLI smoke proof when you only need to
 verify the local harness/service path:
 
 ```bash
-uv run python scripts/e2e_agent90_usefulness.py --marker AGENT90_SMOKE --model gpt-5.4-mini --task-lines 3 --execute --query-db
+uv run python scripts/e2e_agent90_usefulness.py --marker AGENT90_SMOKE --model gpt-5.5 --task-lines 3 --execute --query-db
 ```
 
 Run practical usefulness proofs with the primary model only when you are ready
@@ -578,8 +582,7 @@ Codex model through `-m`, the same Codex `model_reasoning_effort` through `-c`,
 the same Codex `model_verbosity` through `-c`, and `codex exec --json` so
 provider-reported usage is parsed from `turn.completed.usage` events instead
 of human stderr formatting. The harness defaults to the practical model
-`gpt-5.5` with reasoning effort `medium` and model verbosity `medium`; use
-`--model gpt-5.4-mini` for smoke checks, and override
+`gpt-5.5` with reasoning effort `xhigh` and model verbosity `medium`; override
 `--reasoning-effort <effort>` and `--model-verbosity <verbosity>` when direct
 Codex and LiteLLM should be compared on a different configured effort or
 verbosity. The proxy lane

@@ -82,6 +82,9 @@ capture = {
     "copilot_provider_transport": os.environ.get("COPILOT_PROVIDER_TRANSPORT"),
     "copilot_provider_model_id": os.environ.get("COPILOT_PROVIDER_MODEL_ID"),
     "copilot_provider_wire_model": os.environ.get("COPILOT_PROVIDER_WIRE_MODEL"),
+    "copilot_provider_reasoning_effort": os.environ.get(
+        "COPILOT_PROVIDER_REASONING_EFFORT"
+    ),
     "copilot_provider_max_prompt_tokens": os.environ.get(
         "COPILOT_PROVIDER_MAX_PROMPT_TOKENS"
     ),
@@ -912,14 +915,16 @@ def test_claude_wrapper_generates_mcp_config_and_gateway_env(tmp_path: Path) -> 
     assert capture["gateway_model_discovery"] == "1"
     assert capture["args"] == [
         "--setting-sources",
-        "project",
+        "",
         "--mcp-config",
         str(state_dir / "mcp.json"),
         "--strict-mcp-config",
         "--allowedTools",
         "mcp__analytics__*",
         "--model",
-        "gpt-5.5",
+        "sonnet",
+        "--effort",
+        "xhigh",
         "--print",
         "health marker",
     ]
@@ -933,7 +938,19 @@ def test_claude_wrapper_generates_mcp_config_and_gateway_env(tmp_path: Path) -> 
             }
         }
     }
+    managed_config = json.loads((state_dir / ".claude.json").read_text())
+    assert managed_config == {
+        "hasCompletedOnboarding": True,
+        "litellmProxy": {
+            "backend_model": "gpt-5.5",
+            "effort": "xhigh",
+            "model": "sonnet",
+            "reasoning_effort": "xhigh",
+        },
+        "projects": {},
+    }
     assert "sk-test-wrapper-key" not in (state_dir / "mcp.json").read_text()
+    assert "apiKeyHelper" not in (state_dir / ".claude.json").read_text()
 
 
 def test_claude_wrapper_persists_managed_preferences_and_links_native_state(
@@ -944,7 +961,6 @@ def test_claude_wrapper_persists_managed_preferences_and_links_native_state(
     _write_fake_cli(fake_bin / "claude")
     capture_path = tmp_path / "capture.json"
     state_dir = tmp_path / "claude-state"
-    native_config = tmp_path / ".claude.json"
     native_state = tmp_path / ".claude"
     native_state.mkdir()
     native_auth = native_state / ".credentials.json"
@@ -959,7 +975,20 @@ def test_claude_wrapper_persists_managed_preferences_and_links_native_state(
     (native_state / "settings.json").write_text(
         '{"env":{"ANTHROPIC_BASE_URL":"http://10.20.30.1:11435"}}'
     )
-    native_config.write_text('{"topLevel":true}')
+    stale_managed_config = state_dir / ".claude.json"
+    state_dir.mkdir()
+    stale_managed_config.write_text('{"apiKeyHelper":"stale"}')
+    stale_settings = state_dir / "settings.json"
+    stale_settings.write_text('{"apiKeyHelper":"stale"}')
+    stale_config_dir = state_dir / ".config" / "litellm-proxy"
+    stale_config_dir.mkdir(parents=True)
+    (stale_config_dir / "env").write_text("LITELLM_MASTER_KEY=stale\n")
+    stale_helper_dir = state_dir / "bin"
+    stale_helper_dir.mkdir()
+    (stale_helper_dir / "get-litellm-master-key.sh").write_text("#!/bin/sh\n")
+    stale_backup_dir = state_dir / "backups"
+    stale_backup_dir.mkdir()
+    (stale_backup_dir / "settings.json.bak").write_text('{"apiKeyHelper":"stale"}')
 
     env = _base_env(fake_bin, capture_path)
     env["HOME"] = str(tmp_path)
@@ -995,7 +1024,7 @@ def test_claude_wrapper_persists_managed_preferences_and_links_native_state(
 
     assert capture["args"] == [
         "--setting-sources",
-        "project",
+        "",
         "--mcp-config",
         str(state_dir / "mcp.json"),
         "--strict-mcp-config",
@@ -1017,8 +1046,18 @@ def test_claude_wrapper_persists_managed_preferences_and_links_native_state(
     }
     assert capture["claude_config_dir"] == str(state_dir)
     assert capture["home"] == str(state_dir)
-    assert (state_dir / ".claude.json").is_symlink()
-    assert (state_dir / ".claude.json").resolve() == native_config
+    managed_config = json.loads(stale_managed_config.read_text())
+    assert managed_config["litellmProxy"] == {
+        "backend_model": "gpt-5.5",
+        "effort": "high",
+        "model": "gpt-5.4-mini",
+        "reasoning_effort": "high",
+    }
+    assert "apiKeyHelper" not in stale_managed_config.read_text()
+    assert not stale_settings.exists()
+    assert not (state_dir / ".config").exists()
+    assert not stale_helper_dir.exists()
+    assert not stale_backup_dir.exists()
     assert (state_dir / ".credentials.json").is_symlink()
     assert (state_dir / ".credentials.json").resolve() == native_auth
     assert (state_dir / "sessions").is_symlink()
@@ -1169,6 +1208,8 @@ def test_opencode_wrapper_generates_managed_config_and_env(tmp_path: Path) -> No
         "--model",
         "litellm/gpt-5.5",
         "run",
+        "--variant",
+        "xhigh",
         "health marker",
     ]
     assert capture["opencode_config"] == str(config_path)
@@ -1243,10 +1284,13 @@ def test_opencode_wrapper_persists_managed_model_preferences(tmp_path: Path) -> 
         "--model",
         "litellm/gpt-5.4-mini",
         "run",
+        "--variant",
+        "xhigh",
         "second",
     ]
     assert config["model"] == "litellm/gpt-5.4-mini"
     assert preferences["model"] == "gpt-5.4-mini"
+    assert preferences["variant"] == "xhigh"
 
 
 def test_opencode_wrapper_respects_existing_model_argument(tmp_path: Path) -> None:
@@ -1277,6 +1321,8 @@ def test_opencode_wrapper_respects_existing_model_argument(tmp_path: Path) -> No
         "--model",
         "litellm/gpt-5.4-mini",
         "run",
+        "--variant",
+        "xhigh",
         "health marker",
     ]
 
@@ -1389,6 +1435,8 @@ def test_pi_wrapper_generates_managed_models_config_and_env(tmp_path: Path) -> N
         "litellm",
         "--model",
         "gpt-5.5",
+        "--thinking",
+        "xhigh",
         "-p",
         "health marker",
     ]
@@ -1471,11 +1519,14 @@ def test_pi_wrapper_persists_managed_model_preferences(tmp_path: Path) -> None:
         "litellm",
         "--model",
         "gpt-5.4-mini",
+        "--thinking",
+        "xhigh",
         "-p",
         "second",
     ]
     assert config["providers"]["litellm"]["models"][0]["id"] == "gpt-5.4-mini"
     assert preferences["model"] == "gpt-5.4-mini"
+    assert preferences["thinking"] == "xhigh"
 
 
 def test_pi_wrapper_respects_existing_model_argument(tmp_path: Path) -> None:
@@ -1503,6 +1554,8 @@ def test_pi_wrapper_respects_existing_model_argument(tmp_path: Path) -> None:
 
     capture = json.loads(capture_path.read_text())
     assert capture["args"] == [
+        "--thinking",
+        "xhigh",
         "--model",
         "litellm/gpt-5.4-mini",
         "-p",
@@ -1594,8 +1647,13 @@ def test_copilot_wrapper_defaults_to_managed_home(tmp_path: Path) -> None:
     assert capture["copilot_provider_transport"] == "http"
     assert capture["copilot_provider_model_id"] == "gpt-5.5"
     assert capture["copilot_provider_wire_model"] == "gpt-5.5"
+    assert capture["copilot_provider_reasoning_effort"] == "xhigh"
     assert capture["copilot_provider_max_prompt_tokens"] is None
     assert capture["copilot_provider_max_output_tokens"] is None
+    assert json.loads((managed_home / "config.json").read_text()) == {
+        "model": "gpt-4.1",
+        "reasoning_effort": "xhigh",
+    }
     assert managed_home.is_dir()
     assert not (tmp_path / ".copilot").exists()
 
@@ -1647,6 +1705,7 @@ def test_copilot_wrapper_uses_configured_litellm_provider(tmp_path: Path) -> Non
     env["COPILOT_LITELLM_WIRE_API"] = "responses"
     env["COPILOT_LITELLM_MAX_PROMPT_TOKENS"] = "180000"
     env["COPILOT_LITELLM_MAX_OUTPUT_TOKENS"] = "64000"
+    env["COPILOT_LITELLM_REASONING_EFFORT"] = "high"
     env["COPILOT_LITELLM_CLIENT"] = "copilot-smoke"
     env["COPILOT_LITELLM_PROJECT"] = "project\none"
     env["COPILOT_LITELLM_COMPRESSION_MODE"] = "disabled"
@@ -1666,6 +1725,7 @@ def test_copilot_wrapper_uses_configured_litellm_provider(tmp_path: Path) -> Non
     assert capture["copilot_model"] == "gpt-4.1"
     assert capture["copilot_provider_model_id"] == "gpt-5.4"
     assert capture["copilot_provider_wire_model"] == "gpt-5.4-mini"
+    assert capture["copilot_provider_reasoning_effort"] == "high"
     assert capture["copilot_provider_wire_api"] == "responses"
     assert capture["copilot_provider_max_prompt_tokens"] == "180000"
     assert capture["copilot_provider_max_output_tokens"] == "64000"
@@ -1695,6 +1755,7 @@ def test_copilot_wrapper_persists_managed_provider_preferences(
     env["COPILOT_LITELLM_PROVIDER_MODEL_ID"] = "gpt-5.4"
     env["COPILOT_LITELLM_WIRE_MODEL"] = "gpt-5.4-mini"
     env["COPILOT_LITELLM_MAX_PROMPT_TOKENS"] = "180000"
+    env["COPILOT_LITELLM_REASONING_EFFORT"] = "high"
 
     subprocess.run(
         [str(REPO_ROOT / "bin/copilot-litellm"), "-p", "first"],
@@ -1707,6 +1768,7 @@ def test_copilot_wrapper_persists_managed_provider_preferences(
     env.pop("COPILOT_LITELLM_PROVIDER_MODEL_ID")
     env.pop("COPILOT_LITELLM_WIRE_MODEL")
     env.pop("COPILOT_LITELLM_MAX_PROMPT_TOKENS")
+    env.pop("COPILOT_LITELLM_REASONING_EFFORT")
     subprocess.run(
         [str(REPO_ROOT / "bin/copilot-litellm"), "-p", "second"],
         check=True,
@@ -1721,8 +1783,10 @@ def test_copilot_wrapper_persists_managed_provider_preferences(
     assert capture["copilot_provider_model_id"] == "gpt-5.4"
     assert capture["copilot_provider_wire_model"] == "gpt-5.4-mini"
     assert capture["copilot_provider_max_prompt_tokens"] == "180000"
+    assert capture["copilot_provider_reasoning_effort"] == "high"
     assert preferences["wire_model"] == "gpt-5.4-mini"
     assert preferences["provider_model_id"] == "gpt-5.4"
+    assert preferences["reasoning_effort"] == "high"
 
 
 def test_copilot_wrapper_owns_provider_env_over_shell_defaults(
@@ -1756,6 +1820,7 @@ def test_copilot_wrapper_owns_provider_env_over_shell_defaults(
     assert capture["copilot_provider_wire_api"] == "responses"
     assert capture["copilot_provider_model_id"] == "gpt-5.5"
     assert capture["copilot_provider_wire_model"] == "gpt-5.5"
+    assert capture["copilot_provider_reasoning_effort"] == "xhigh"
 
 
 def test_copilot_wrapper_adds_cli_model_for_provider_calls(tmp_path: Path) -> None:

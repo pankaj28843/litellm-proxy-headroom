@@ -31,6 +31,7 @@ MANAGED_HOME_NAME = ".copilot-headroom"
 LOCAL_BACKUP_TAG = "copilot-headroom-local-backup"
 DEFAULT_CLI_MODEL = "gpt-4.1"
 DEFAULT_WIRE_MODEL = "gpt-5.5"
+EFFORT_VALUES = {"low", "medium", "high", "xhigh"}
 
 
 def die(message: str, code: int = 1) -> None:
@@ -135,6 +136,17 @@ def resolved_preferences(
         preferences=preferences,
         dotenv_keys=dotenv_keys,
     )
+    reasoning_effort = preference_value(
+        env_name="COPILOT_LITELLM_REASONING_EFFORT",
+        preference_key="reasoning_effort",
+        preferences=preferences,
+        dotenv_keys=dotenv_keys,
+        default="xhigh",
+    )
+    if reasoning_effort not in EFFORT_VALUES:
+        die(
+            "COPILOT_LITELLM_REASONING_EFFORT must be one of low, medium, high, or xhigh."
+        )
     return {
         **preferences,
         "cli_model": cli_model,
@@ -145,7 +157,19 @@ def resolved_preferences(
         "transport": transport,
         "max_prompt_tokens": max_prompt_tokens,
         "max_output_tokens": max_output_tokens,
+        "reasoning_effort": reasoning_effort,
     }
+
+
+def write_config(path: Path, preferences: dict[str, str]) -> None:
+    payload = {
+        "model": preferences["cli_model"],
+        "reasoning_effort": preferences["reasoning_effort"],
+    }
+    path.write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
 
 
 def has_yolo_arg(argv: list[str]) -> bool:
@@ -311,9 +335,12 @@ def main(argv: list[str]) -> int:
     cli_model = preferences["cli_model"]
     provider_model_id = preferences["provider_model_id"]
     provider_wire_model = preferences["provider_wire_model"]
+    reasoning_effort = preferences["reasoning_effort"]
+    write_config(config_home / "config.json", preferences)
     os.environ["COPILOT_MODEL"] = cli_model
     os.environ["COPILOT_PROVIDER_MODEL_ID"] = provider_model_id
     os.environ["COPILOT_PROVIDER_WIRE_MODEL"] = provider_wire_model
+    os.environ["COPILOT_PROVIDER_REASONING_EFFORT"] = reasoning_effort
     if preferences.get("max_prompt_tokens"):
         os.environ["COPILOT_LITELLM_MAX_PROMPT_TOKENS"] = preferences[
             "max_prompt_tokens"

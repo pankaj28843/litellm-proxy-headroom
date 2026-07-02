@@ -11,6 +11,18 @@ import yaml
 
 DEFAULT_CONFIG = Path("config/litellm.yaml")
 DEFAULT_CODEX_COMMAND = ("codex", "debug", "models")
+CLAUDE_GPT55_ALIASES = (
+    ("sonnet", "Claude Sonnet alias via GPT-5.5"),
+    ("opus", "Claude Opus alias via GPT-5.5"),
+    ("fable", "Claude Fable alias via GPT-5.5"),
+    ("claude-sonnet-5", "Claude Sonnet 5 alias via GPT-5.5"),
+    ("claude-opus-5", "Claude Opus 5 alias via GPT-5.5"),
+    ("claude-sonnet-4-6", "Claude Sonnet 4.6 alias via GPT-5.5"),
+    ("claude-opus-4-6", "Claude Opus 4.6 alias via GPT-5.5"),
+    ("claude-sonnet-4-5", "Claude Sonnet 4.5 alias via GPT-5.5"),
+    ("claude-opus-4-5", "Claude Opus 4.5 alias via GPT-5.5"),
+    ("claude-fable-5", "Claude Fable 5 alias via GPT-5.5"),
+)
 
 
 class IndentedSafeDumper(yaml.SafeDumper):
@@ -76,6 +88,21 @@ def generated_model_list(codex_models: dict[str, Any]) -> list[dict[str, Any]]:
                 },
             }
         )
+
+        if slug == "gpt-5.5":
+            for alias, display_name in CLAUDE_GPT55_ALIASES:
+                model_list.append(
+                    {
+                        "model_name": alias,
+                        "model_info": {
+                            "mode": "responses",
+                            "alias_for": "gpt-5.5",
+                            "display_name": display_name,
+                            "codex_default_reasoning_level": "xhigh",
+                        },
+                        "litellm_params": {"model": "chatgpt/gpt-5.5"},
+                    }
+                )
 
     if not model_list:
         raise ValueError("No API-supported Codex models found")

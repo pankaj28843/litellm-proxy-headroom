@@ -9,6 +9,18 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 SYSTEM_AS_USER_PREFIX = "System instructions:\n\n"
 CHATGPT_BACKED_MODEL_PREFIXES = ("codex-", "gpt-")
+CHATGPT_BACKED_MODEL_ALIASES = {
+    "sonnet",
+    "opus",
+    "fable",
+    "claude-sonnet-5",
+    "claude-opus-5",
+    "claude-sonnet-4-6",
+    "claude-opus-4-6",
+    "claude-sonnet-4-5",
+    "claude-opus-4-5",
+    "claude-fable-5",
+}
 
 
 def _content_text(value: Any) -> str | None:
@@ -32,7 +44,10 @@ def _content_text(value: Any) -> str | None:
 
 
 def _is_chatgpt_backed_alias(model: Any) -> bool:
-    return isinstance(model, str) and model.startswith(CHATGPT_BACKED_MODEL_PREFIXES)
+    return isinstance(model, str) and (
+        model in CHATGPT_BACKED_MODEL_ALIASES
+        or model.startswith(CHATGPT_BACKED_MODEL_PREFIXES)
+    )
 
 
 def _prepend_text_to_user_message(message: dict[str, Any], text: str) -> None:
@@ -102,7 +117,7 @@ class AnthropicSystemAsUserMiddleware:
                     separators=(",", ":"),
                     ensure_ascii=False,
                 ).encode("utf-8")
-        except (TypeError, ValueError, UnicodeDecodeError):
+        except TypeError, ValueError, UnicodeDecodeError:
             rewritten_body = request_body
 
         sent = False

@@ -63,6 +63,13 @@ def test_remote_wrapper_installer_writes_secret_local_launchers(tmp_path: Path) 
         "COPILOT_LITELLM_COMPRESSION_MODE=off"
         in (bin_dir / "copilot-litellm").read_text()
     )
+    for launcher in bin_dir.glob("*-litellm"):
+        text = launcher.read_text()
+        assert "_LITELLM_MODEL=" not in text
+        assert "_LITELLM_REASONING_EFFORT=" not in text
+        assert "_LITELLM_EFFORT=" not in text
+        assert "_LITELLM_VARIANT=" not in text
+        assert "_LITELLM_THINKING=" not in text
 
 
 def test_remote_wrapper_installer_accepts_deduplicated_ssh_targets() -> None:

@@ -105,7 +105,7 @@ def test_agent90_usefulness_harness_dry_run_contract(tmp_path: Path) -> None:
         "-m",
         "gpt-5.5",
         "-c",
-        'model_reasoning_effort="medium"',
+        'model_reasoning_effort="xhigh"',
         "-c",
         'model_verbosity="medium"',
         "-a",
@@ -120,7 +120,7 @@ def test_agent90_usefulness_harness_dry_run_contract(tmp_path: Path) -> None:
         "-c",
         'model_provider="openai"',
         "-c",
-        'model_reasoning_effort="medium"',
+        'model_reasoning_effort="xhigh"',
         "-c",
         'model_verbosity="medium"',
         "-a",
@@ -139,7 +139,7 @@ def test_agent90_usefulness_harness_dry_run_contract(tmp_path: Path) -> None:
     assert "for i in range(3)" in direct["command"][17]
     assert plan["task"]["model"] == "gpt-5.5"
     assert plan["task"]["direct_model_provider"] == "openai"
-    assert plan["task"]["reasoning_effort"] == "medium"
+    assert plan["task"]["reasoning_effort"] == "xhigh"
     assert plan["task"]["model_verbosity"] == "medium"
     assert plan["task"]["expected_savings_profile"] == "agent-90"
     assert plan["task"]["proxy_responses_provider_passthrough"] is None
@@ -162,7 +162,9 @@ def test_agent90_usefulness_harness_dry_run_contract(tmp_path: Path) -> None:
     assert plan["preflight"]["artifacts"]["result"].endswith("preflight-result.json")
     assert plan["account_snapshots"]["enabled"] is True
     assert plan["account_snapshots"]["codex_bin"] == "codex"
-    assert plan["account_snapshots"]["script"].endswith("scripts/codex_account_snapshot.py")
+    assert plan["account_snapshots"]["script"].endswith(
+        "scripts/codex_account_snapshot.py"
+    )
     assert plan["account_snapshots"]["timeout_seconds"] == 20.0
     assert plan["account_snapshots"]["settle_seconds"] == 0.0
     assert plan["account_snapshots"]["attempts"] == 2
@@ -185,7 +187,7 @@ def test_agent90_usefulness_harness_dry_run_contract(tmp_path: Path) -> None:
         "CODEX_LITELLM_CLIENT": "codex",
         "CODEX_LITELLM_MODEL": "gpt-5.5",
         "CODEX_LITELLM_MODEL_VERBOSITY": "medium",
-        "CODEX_LITELLM_REASONING_EFFORT": "medium",
+        "CODEX_LITELLM_REASONING_EFFORT": "xhigh",
         "LITELLM_PROXY_RUN_MARKER": "AGENT90_TEST",
     }
     assert plan["lanes"]["proxy"]["artifacts"]["summary_lines"].endswith(
@@ -202,11 +204,12 @@ def test_agent90_usefulness_harness_dry_run_contract(tmp_path: Path) -> None:
     assert "litellm_proxy_run_marker" in plan["proxy_db"]["query_template"]
     assert "litellm_proxy_project" in plan["proxy_db"]["query_template"]
     assert "litellm_proxy_client" in plan["proxy_db"]["query_template"]
-    assert "litellm_proxy_responses_provider_passthrough" in (
-        plan["proxy_db"]["query_template"]
+    assert (
+        "litellm_proxy_responses_provider_passthrough"
+        in (plan["proxy_db"]["query_template"])
     )
-    assert "responses_provider_passthrough_modes" in (
-        plan["proxy_db"]["query_template"]
+    assert (
+        "responses_provider_passthrough_modes" in (plan["proxy_db"]["query_template"])
     )
     assert "correlation_source" in plan["proxy_db"]["query_template"]
     assert "<proxy_started_at_utc>" in plan["proxy_db"]["query_template"]
@@ -258,13 +261,15 @@ def test_agent90_usefulness_harness_can_set_proxy_provider_passthrough() -> None
     plan = harness.build_plan(args)
 
     assert plan["task"]["proxy_responses_provider_passthrough"] == "off"
-    assert plan["lanes"]["proxy"]["environment"][
-        "CODEX_LITELLM_RESPONSES_PROVIDER_PASSTHROUGH"
-    ] == "off"
     assert (
-        "CODEX_LITELLM_RESPONSES_PROVIDER_PASSTHROUGH"
-        not in plan["lanes"]["direct"].get("environment", {})
+        plan["lanes"]["proxy"]["environment"][
+            "CODEX_LITELLM_RESPONSES_PROVIDER_PASSTHROUGH"
+        ]
+        == "off"
     )
+    assert "CODEX_LITELLM_RESPONSES_PROVIDER_PASSTHROUGH" not in plan["lanes"][
+        "direct"
+    ].get("environment", {})
 
 
 def test_agent90_usefulness_harness_prompt_file_replaces_generated_task(
@@ -325,8 +330,9 @@ def test_agent90_usefulness_harness_multiturn_plan_uses_resume() -> None:
         "mode": "resumed_codex_exec_session",
     }
     assert len(plan["lanes"]["direct"]["commands"]) == 3
-    assert "--dangerously-bypass-approvals-and-sandbox" in (
-        plan["lanes"]["direct"]["commands"][0]
+    assert (
+        "--dangerously-bypass-approvals-and-sandbox"
+        in (plan["lanes"]["direct"]["commands"][0])
     )
     assert plan["lanes"]["direct"]["commands"][0][-2] == "--json"
     assert "resume" not in plan["lanes"]["direct"]["commands"][0]
@@ -1348,7 +1354,7 @@ def test_agent90_usefulness_execute_writes_token_summary_artifacts(
         "CODEX_LITELLM_CLIENT": "codex",
         "CODEX_LITELLM_MODEL": "gpt-5.5",
         "CODEX_LITELLM_MODEL_VERBOSITY": "medium",
-        "CODEX_LITELLM_REASONING_EFFORT": "medium",
+        "CODEX_LITELLM_REASONING_EFFORT": "xhigh",
         "LITELLM_PROXY_RUN_MARKER": "AGENT90_FAKE",
     }
     assert "compression_config_snapshots" in db_sql

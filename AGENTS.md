@@ -42,8 +42,9 @@ operator-facing service in this repository.
 
 - Do not treat dashboard totals, estimated tokenizer deltas, smoke/demo rows, or
   one selected provider call as proof that compression is useful.
-- For Codex/LiteLLM usefulness work, smoke-test only with `gpt-5.4-mini`.
-  Practical proof uses `gpt-5.5`.
+- For `bin/*-litellm` wrapper install and route checks, use `gpt-5.5` with
+  xhigh reasoning/effort. Claude Code may use public Anthropic-style aliases
+  such as `sonnet`; those aliases must route internally to `gpt-5.5`.
 - Primary proof must use actual `codex exec --json` turns on both direct Codex
   and `./bin/codex-litellm`, bracketed by first-party Codex account snapshots
   when available. Use `codex app-server --stdio` with JSON-RPC
@@ -103,8 +104,8 @@ operator-facing service in this repository.
   `make install-wrappers`, `make smoke-wrappers`,
   `make install-remote-wrappers WRAPPER_REMOTE_HOSTS="pankaj@10.20.30.102 neeraj@10.20.30.131"`,
   and `make smoke-remote-wrappers WRAPPER_REMOTE_HOSTS="pankaj@10.20.30.102 neeraj@10.20.30.131"`.
-  The smoke workflow uses `gpt-5.4-mini`, compression off, and supported
-  reasoning settings for wrappers that need them.
+  The smoke workflow uses `gpt-5.5`, compression off, and xhigh
+  reasoning/effort settings for wrappers that need them.
 - Current reachable remote install targets are `pankaj@10.20.30.102` and
   `neeraj@10.20.30.131`. The previously typed `pankaj@01.20.30.102` was not
   reachable as SSH parsed it.

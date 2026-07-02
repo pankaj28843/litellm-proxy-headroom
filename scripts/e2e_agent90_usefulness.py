@@ -24,7 +24,7 @@ DEFAULT_ARTIFACT_ROOT = REPO_ROOT / "tmp" / "agent90-usefulness"
 ACCOUNT_SNAPSHOT_SCRIPT = REPO_ROOT / "scripts" / "codex_account_snapshot.py"
 DEFAULT_MODEL = "gpt-5.5"
 DEFAULT_DIRECT_MODEL_PROVIDER = "openai"
-DEFAULT_REASONING_EFFORT = "medium"
+DEFAULT_REASONING_EFFORT = "xhigh"
 DEFAULT_MODEL_VERBOSITY = "medium"
 DEFAULT_SAVINGS_PROFILE = "agent-90"
 DEFAULT_LITELLM_CALLBACK = "HeadroomCallback"
@@ -249,7 +249,7 @@ def _parse_cost_usd(value: str) -> str | None:
         normalized = normalized.replace(",", ".")
     try:
         parsed = Decimal(normalized)
-    except (InvalidOperation, ValueError):
+    except InvalidOperation, ValueError:
         return None
     if parsed < 0:
         return None
@@ -647,7 +647,9 @@ def _compare_trajectories(results: list[dict[str, Any]]) -> dict[str, Any]:
         "error_item_count": ("error_item", "count"),
     }
     comparison: dict[str, Any] = {
-        "status": "complete" if direct is not None and proxy is not None else "incomplete",
+        "status": "complete"
+        if direct is not None and proxy is not None
+        else "incomplete",
         "direct": {},
         "proxy": {},
         "delta_proxy_minus_direct": {},
@@ -979,9 +981,7 @@ def _overall_usefulness(
             "fail_reasons": [str(minimum_input_token_floor["reason"])],
             "missing_reasons": [],
             "account_usefulness": account_comparison.get("usefulness"),
-            "provider_diagnostic_status": token_comparison["mvp_usefulness"][
-                "status"
-            ],
+            "provider_diagnostic_status": token_comparison["mvp_usefulness"]["status"],
             "cost_status": token_comparison["cost"]["status"],
         }
 
@@ -1022,9 +1022,7 @@ def _overall_usefulness(
     return {
         "status": completion_contract["status"],
         "scope": completion_contract["scope"],
-        "reason": (
-            "account_snapshot_unavailable_fell_back_to_provider_diagnostics"
-        ),
+        "reason": ("account_snapshot_unavailable_fell_back_to_provider_diagnostics"),
         "fail_reasons": completion_contract["fail_reasons"],
         "missing_reasons": completion_contract["missing_reasons"],
         "account_usefulness": account_comparison.get("usefulness"),
@@ -1125,9 +1123,7 @@ def _account_lane_summary(result: dict[str, Any]) -> dict[str, Any]:
         "status": "observed" if observed else "unavailable",
         "before": before,
         "after": after,
-        "delta": {
-            key: _account_metric_delta(before, after, key) for key in delta_keys
-        },
+        "delta": {key: _account_metric_delta(before, after, key) for key in delta_keys},
     }
 
 
@@ -3169,7 +3165,9 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         parser.error("--session-turns must be positive")
     if args.min_combined_input_tokens < 0:
         parser.error("--min-combined-input-tokens must be nonnegative")
-    lane_order = [value.strip() for value in args.lane_order.split(",") if value.strip()]
+    lane_order = [
+        value.strip() for value in args.lane_order.split(",") if value.strip()
+    ]
     if sorted(lane_order) != ["direct", "proxy"]:
         parser.error("--lane-order must contain direct and proxy exactly once")
     args.lane_order = lane_order

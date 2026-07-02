@@ -148,16 +148,16 @@ def test_agent90_usefulness_harness_dry_run_contract(tmp_path: Path) -> None:
         "lines": 3,
     }
     assert plan["preflight"]["enabled"] is True
-    assert plan["preflight"]["litellm_url"] == "http://127.0.0.1:4000"
-    assert plan["preflight"]["model_list_url"] == "http://127.0.0.1:4000/v1/models"
+    assert plan["preflight"]["litellm_url"] == "http://10.20.30.1:24040"
+    assert plan["preflight"]["model_list_url"] == "http://10.20.30.1:24040/v1/models"
     assert plan["preflight"]["require_model_available"] is True
     assert plan["preflight"]["model"] == "gpt-5.5"
     assert plan["preflight"]["callback_list_url"] == (
-        "http://127.0.0.1:4000/callbacks/list"
+        "http://10.20.30.1:24040/callbacks/list"
     )
     assert plan["preflight"]["require_callback_loaded"] is True
     assert plan["preflight"]["expected_callback"] == "HeadroomCallback"
-    assert plan["preflight"]["analytics_url"] == "http://127.0.0.1:8010"
+    assert plan["preflight"]["analytics_url"] == "http://127.0.0.1:28010"
     assert plan["preflight"]["require_analytics_ready"] is False
     assert plan["preflight"]["artifacts"]["result"].endswith("preflight-result.json")
     assert plan["account_snapshots"]["enabled"] is True
@@ -180,8 +180,8 @@ def test_agent90_usefulness_harness_dry_run_contract(tmp_path: Path) -> None:
         "proxy/environment.json"
     )
     assert plan["lanes"]["proxy"]["environment"] == {
-        "CODEX_LITELLM_ANALYTICS_URL": "http://127.0.0.1:8010",
-        "CODEX_LITELLM_BASE_URL": "http://127.0.0.1:4000/v1",
+        "CODEX_LITELLM_ANALYTICS_URL": "http://127.0.0.1:28010",
+        "CODEX_LITELLM_BASE_URL": "http://10.20.30.1:24040/v1",
         "CODEX_LITELLM_CLIENT": "codex",
         "CODEX_LITELLM_MODEL": "gpt-5.5",
         "CODEX_LITELLM_MODEL_VERBOSITY": "medium",
@@ -487,7 +487,7 @@ def test_agent90_usefulness_harness_rejects_litellm_url_credentials() -> None:
             "--marker",
             "AGENT90_TEST",
             "--litellm-url",
-            "http://user:secret@127.0.0.1:4000",
+            "http://user:secret@10.20.30.1:24040",
         ],
         cwd=REPO_ROOT,
         text=True,
@@ -508,7 +508,7 @@ def test_agent90_usefulness_harness_rejects_analytics_url_query() -> None:
             "--marker",
             "AGENT90_TEST",
             "--analytics-url",
-            "http://127.0.0.1:8010?token=secret",
+            "http://127.0.0.1:28010?token=secret",
         ],
         cwd=REPO_ROOT,
         text=True,
@@ -643,7 +643,7 @@ def test_agent90_usefulness_query_db_plan_requires_analytics_ready() -> None:
 
     assert plan["preflight"]["enabled"] is True
     assert plan["preflight"]["require_analytics_ready"] is True
-    assert plan["preflight"]["analytics_url"] == "http://127.0.0.1:8010"
+    assert plan["preflight"]["analytics_url"] == "http://127.0.0.1:28010"
 
 
 def test_agent90_preflight_model_check_uses_master_key_without_persisting_value(
@@ -1343,8 +1343,8 @@ def test_agent90_usefulness_execute_writes_token_summary_artifacts(
         "missing_reasons": [],
     }
     assert json.loads((artifact_dir / "proxy" / "environment.json").read_text()) == {
-        "CODEX_LITELLM_ANALYTICS_URL": "http://127.0.0.1:8010",
-        "CODEX_LITELLM_BASE_URL": "http://127.0.0.1:4000/v1",
+        "CODEX_LITELLM_ANALYTICS_URL": "http://127.0.0.1:28010",
+        "CODEX_LITELLM_BASE_URL": "http://10.20.30.1:24040/v1",
         "CODEX_LITELLM_CLIENT": "codex",
         "CODEX_LITELLM_MODEL": "gpt-5.5",
         "CODEX_LITELLM_MODEL_VERBOSITY": "medium",

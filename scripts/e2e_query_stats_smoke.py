@@ -10,7 +10,7 @@ import asyncpg
 import httpx
 from e2e_analytics_smoke import _payload
 
-DEFAULT_BACKEND_URL = "http://127.0.0.1:8010"
+DEFAULT_BACKEND_URL = "http://127.0.0.1:28010"
 DEFAULT_DB_DSN = "postgresql://analytics:analytics@127.0.0.1:55432/analytics"
 SENSITIVE_CONTENT = "compressed analytics smoke content"
 

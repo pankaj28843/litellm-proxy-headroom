@@ -7,7 +7,7 @@ from typing import Any
 
 import httpx
 
-DEFAULT_BACKEND_URL = "http://127.0.0.1:8010"
+DEFAULT_BACKEND_URL = "http://127.0.0.1:28010"
 
 
 def _payload(marker: str) -> dict[str, Any]:

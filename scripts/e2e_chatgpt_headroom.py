@@ -7,8 +7,8 @@ from typing import Any
 
 import httpx
 
-DEFAULT_PROXY_URL = "http://127.0.0.1:4000"
-DEFAULT_ANALYTICS_URL = "http://127.0.0.1:8010"
+DEFAULT_PROXY_URL = "http://10.20.30.1:24040"
+DEFAULT_ANALYTICS_URL = "http://127.0.0.1:28010"
 DEFAULT_MODEL_CANDIDATES = "gpt-5.4-mini"
 
 

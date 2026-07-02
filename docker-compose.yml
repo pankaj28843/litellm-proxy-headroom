@@ -1,6 +1,11 @@
+x-app-image: &app-image litellm-proxy-headroom-app:latest
+x-app-build: &app-build
+  context: .
+  dockerfile: Dockerfile
+
 services:
   analytics-db:
-    image: postgres:16-alpine
+    image: postgres:18
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${ANALYTICS_POSTGRES_DB:-analytics}
@@ -18,17 +23,17 @@ services:
     ports:
       - "127.0.0.1:${ANALYTICS_POSTGRES_PORT:-55432}:5432"
     volumes:
-      - analytics_pgdata:/var/lib/postgresql/data
+      - analytics_pgdata:/var/lib/postgresql
 
   analytics-backend:
-    build:
-      context: .
+    image: *app-image
+    build: *app-build
     restart: unless-stopped
     depends_on:
       analytics-db:
         condition: service_healthy
       phoenix:
-        condition: service_started
+        condition: service_healthy
     command:
       - uvicorn
       - litellm_proxy_headroom.analytics.adapters.api.app:create_app
@@ -48,11 +53,39 @@ services:
       HEADROOM_ANALYTICS_OTEL_CONSOLE: ${HEADROOM_ANALYTICS_OTEL_CONSOLE:-false}
       HEADROOM_ANALYTICS_OTEL_METRIC_EXPORT_INTERVAL_MS: ${HEADROOM_ANALYTICS_OTEL_METRIC_EXPORT_INTERVAL_MS:-60000}
       LITELLM_PROXY_ANALYTICS_OTEL_EXCLUDED_URLS: ${LITELLM_PROXY_ANALYTICS_OTEL_EXCLUDED_URLS-}
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "exec(\"import sys, urllib.request\\nok = False\\ntry:\\n    urllib.request.urlopen('http://127.0.0.1:8010/ready', timeout=2).read()\\n    ok = True\\nexcept Exception:\\n    pass\\nsys.exit(0 if ok else 1)\")",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
     ports:
-      - "127.0.0.1:${ANALYTICS_BACKEND_PORT:-8010}:8010"
+      - "127.0.0.1:${ANALYTICS_BACKEND_PORT:-28010}:8010"
+
+  analytics-migrations:
+    image: *app-image
+    build: *app-build
+    profiles:
+      - migrate
+    restart: "no"
+    depends_on:
+      analytics-db:
+        condition: service_healthy
+    command:
+      - alembic
+      - upgrade
+      - head
+    environment:
+      ANALYTICS_DATABASE_URL: postgresql+asyncpg://${ANALYTICS_POSTGRES_USER:-analytics}:${ANALYTICS_POSTGRES_PASSWORD:-analytics}@analytics-db:5432/${ANALYTICS_POSTGRES_DB:-analytics}
 
   phoenix-db:
-    image: postgres:16-alpine
+    image: postgres:18
     restart: unless-stopped
     environment:
       POSTGRES_DB: phoenix
@@ -64,45 +97,55 @@ services:
       timeout: 5s
       retries: 10
     volumes:
-      - phoenix_pgdata:/var/lib/postgresql/data
+      - phoenix_pgdata:/var/lib/postgresql
 
   phoenix:
-    image: arizephoenix/phoenix:latest
+    image: arizephoenix/phoenix:version-17.15.0
     restart: unless-stopped
     depends_on:
       phoenix-db:
         condition: service_healthy
     environment:
-      PHOENIX_POSTGRES_HOST: phoenix-db
-      PHOENIX_POSTGRES_PORT: "5432"
-      PHOENIX_POSTGRES_USER: phoenix
-      PHOENIX_POSTGRES_PASSWORD: ${PHOENIX_DB_PASSWORD:?set PHOENIX_DB_PASSWORD in .env}
-      PHOENIX_POSTGRES_DB: phoenix
+      PHOENIX_HOST: 0.0.0.0
+      PHOENIX_PORT: "6006"
+      PHOENIX_GRPC_PORT: "4317"
+      PHOENIX_SQL_DATABASE_URL: postgresql://phoenix:${PHOENIX_DB_PASSWORD:?set PHOENIX_DB_PASSWORD in .env}@phoenix-db:5432/phoenix
       PHOENIX_DEFAULT_RETENTION_POLICY_DAYS: ${PHOENIX_DEFAULT_RETENTION_POLICY_DAYS:-90}
       PHOENIX_TELEMETRY_ENABLED: "false"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "/usr/bin/python3.13",
+          "-c",
+          "exec(\"import sys, urllib.request\\nok = False\\ntry:\\n    urllib.request.urlopen('http://127.0.0.1:6006/', timeout=2).read(1)\\n    ok = True\\nexcept Exception:\\n    pass\\nsys.exit(0 if ok else 1)\")",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 24
+      start_period: 10s
     ports:
-      - "127.0.0.1:6006:6006"
+      - "127.0.0.1:${PHOENIX_HOST_PORT:-26006}:6006"
     expose:
       - "4317"
       - "6006"
 
   litellm:
-    build:
-      context: .
+    image: *app-image
+    build: *app-build
     restart: unless-stopped
     command:
-      - litellm
-      - --config
-      - /app/config/litellm.yaml
+      - uvicorn
+      - litellm_proxy_headroom.litellm_app:app
       - --host
       - 0.0.0.0
       - --port
       - "4000"
     depends_on:
       analytics-backend:
-        condition: service_started
+        condition: service_healthy
       phoenix:
-        condition: service_started
+        condition: service_healthy
     environment:
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:?set LITELLM_MASTER_KEY in .env}
       CONFIG_FILE_PATH: /app/config/litellm.yaml
@@ -130,41 +173,27 @@ services:
       HEADROOM_CCR_ANALYTICS_TIMEOUT_SECONDS: "0.75"
       HEADROOM_SAVINGS_PROFILE: ${HEADROOM_SAVINGS_PROFILE:-agent-90}
       HEADROOM_RESPONSES_MUTABLE_OUTPUT_COMPRESSION: ${HEADROOM_RESPONSES_MUTABLE_OUTPUT_COMPRESSION:-false}
+      LITELLM_PROXY_DEBUG_PAYLOAD_SHAPES: ${LITELLM_PROXY_DEBUG_PAYLOAD_SHAPES:-false}
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "exec(\"import os, sys, urllib.request\\nok = False\\ntry:\\n    req = urllib.request.Request('http://127.0.0.1:4000/v1/models', headers={'Authorization': 'Bearer ' + os.environ['LITELLM_MASTER_KEY']})\\n    urllib.request.urlopen(req, timeout=2).read(1)\\n    ok = True\\nexcept Exception:\\n    pass\\nsys.exit(0 if ok else 1)\")",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
     expose:
       - "4000"
     ports:
-      - "127.0.0.1:4000:4000"
+      - "${LITELLM_VM_BIND_HOST:-10.20.30.1}:${LITELLM_PROXY_PORT:-24040}:4000"
     volumes:
       - ./config:/app/config:ro
       - ./data/chatgpt:/data/chatgpt
 
-  open-webui:
-    image: ghcr.io/open-webui/open-webui:main
-    restart: unless-stopped
-    depends_on:
-      litellm:
-        condition: service_started
-      phoenix:
-        condition: service_started
-    environment:
-      WEBUI_SECRET_KEY: ${WEBUI_SECRET_KEY:?set WEBUI_SECRET_KEY in .env}
-      WEBUI_ADMIN_EMAIL: ${WEBUI_ADMIN_EMAIL:-admin@example.local}
-      WEBUI_ADMIN_PASSWORD: ${WEBUI_ADMIN_PASSWORD:?set WEBUI_ADMIN_PASSWORD in .env}
-      WEBUI_ADMIN_NAME: ${WEBUI_ADMIN_NAME:-Admin}
-      ENABLE_SIGNUP: "false"
-      DEFAULT_USER_ROLE: pending
-      SAFE_MODE: "true"
-      LOG_FORMAT: json
-      OPENAI_API_BASE_URL: http://litellm:4000/v1
-      OPENAI_API_KEY: ${LITELLM_MASTER_KEY:?set LITELLM_MASTER_KEY in .env}
-      ENABLE_FORWARD_USER_INFO_HEADERS: "true"
-      ENABLE_OTEL: "false"
-    ports:
-      - "127.0.0.1:8080:8080"
-    volumes:
-      - openwebui_data:/app/backend/data
-
 volumes:
   analytics_pgdata:
   phoenix_pgdata:
-  openwebui_data:

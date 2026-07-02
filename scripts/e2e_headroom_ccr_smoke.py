@@ -11,7 +11,7 @@ import httpx
 from headroom.cache.compression_store import CompressionStore
 
 ENTRY_POINT_NAME = "analytics-postgres"
-DEFAULT_ANALYTICS_URL = "http://127.0.0.1:8010"
+DEFAULT_ANALYTICS_URL = "http://127.0.0.1:28010"
 
 
 def _entry_point_factory() -> Any:
@@ -27,7 +27,7 @@ def _entry_point_factory() -> Any:
 
 def main() -> int:
     analytics_url = os.environ.get("HEADROOM_ANALYTICS_URL", DEFAULT_ANALYTICS_URL)
-    marker = f"headroom-ccr-smoke-{int(time.time())}"
+    marker = f"headroom-ccr-smoke-{time.time_ns()}"
     ccr_hash = hashlib.sha256(marker.encode()).hexdigest()[:24]
     original = json.dumps(
         [{"idx": idx, "marker": marker, "payload": f"value-{idx}"} for idx in range(20)]
@@ -56,11 +56,21 @@ def main() -> int:
 
     fresh_backend = factory(url=analytics_url, tenant_prefix="smoke")
     fresh_store = CompressionStore(backend=fresh_backend, default_ttl=1800)
-    retrieved = fresh_store.retrieve(ccr_hash)
+    retrieved = None
+    for _ in range(20):
+        retrieved = fresh_store.retrieve(ccr_hash)
+        if retrieved is not None and marker in retrieved.original_content:
+            break
+        time.sleep(0.1)
     if retrieved is None or marker not in retrieved.original_content:
         raise SystemExit("stored CCR entry was not retrievable from fresh backend")
 
-    search_results = fresh_store.search(ccr_hash, marker)
+    search_results = []
+    for _ in range(20):
+        search_results = fresh_store.search(ccr_hash, marker)
+        if search_results:
+            break
+        time.sleep(0.1)
     if not search_results:
         raise SystemExit("stored CCR entry was not searchable")
 

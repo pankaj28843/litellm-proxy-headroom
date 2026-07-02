@@ -494,8 +494,8 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--codex-bin", default="codex")
     parser.add_argument("--proxy-bin", default=str(REPO_ROOT / "bin" / "codex-litellm"))
     parser.add_argument("--model", default=DEFAULT_MODEL)
-    parser.add_argument("--litellm-url", default="http://127.0.0.1:4000")
-    parser.add_argument("--analytics-url", default="http://127.0.0.1:8010")
+    parser.add_argument("--litellm-url", default="http://10.20.30.1:24040")
+    parser.add_argument("--analytics-url", default="http://127.0.0.1:28010")
     parser.add_argument("--direct-model-provider", default=DEFAULT_DIRECT_MODEL_PROVIDER)
     parser.add_argument(
         "--http-capture-model-provider",

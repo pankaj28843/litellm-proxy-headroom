@@ -177,12 +177,12 @@ def main(argv: list[str]) -> int:
 
     try:
         litellm_base_url = normalize_base_url(
-            os.environ.get("OPENCODE_LITELLM_BASE_URL", "http://127.0.0.1:4000"),
+            os.environ.get("OPENCODE_LITELLM_BASE_URL", "http://10.20.30.1:24040"),
             env_name="OPENCODE_LITELLM_BASE_URL",
             suffix="/v1",
         )
         analytics_mcp_url = normalize_base_url(
-            os.environ.get("OPENCODE_LITELLM_ANALYTICS_URL", "http://127.0.0.1:8010"),
+            os.environ.get("OPENCODE_LITELLM_ANALYTICS_URL", "http://127.0.0.1:28010"),
             env_name="OPENCODE_LITELLM_ANALYTICS_URL",
             suffix="/mcp",
         )

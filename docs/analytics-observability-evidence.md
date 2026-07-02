@@ -6,11 +6,11 @@ running unit tests.
 
 ## Scope
 
-- Custom analytics backend: <http://127.0.0.1:8010>
-- LiteLLM public proxy: <http://127.0.0.1:4000>
-- Analytics MCP: <http://127.0.0.1:8010/mcp/>
-- Open WebUI: <http://127.0.0.1:8080>
-- Phoenix: <http://127.0.0.1:6006>
+- Custom analytics backend: <http://127.0.0.1:28010>
+- LiteLLM public proxy: <http://10.20.30.1:24040>
+- LiteLLM public proxy for sibling VMs on this host: <http://10.20.30.1:24040>
+- Analytics MCP: <http://127.0.0.1:28010/mcp/>
+- Phoenix: <http://127.0.0.1:26006>
 - Analytics PostgreSQL: `127.0.0.1:${ANALYTICS_POSTGRES_PORT:-55432}`
 
 Headroom is in scope only as imported library code behind the LiteLLM callback
@@ -75,8 +75,8 @@ Expected evidence:
 ## Backend Health
 
 ```bash
-curl -fsS http://127.0.0.1:8010/health
-curl -fsS http://127.0.0.1:8010/ready
+curl -fsS http://127.0.0.1:28010/health
+curl -fsS http://127.0.0.1:28010/ready
 uv run alembic current
 ```
 
@@ -91,10 +91,10 @@ Expected evidence:
 Run these before unit tests for analytics changes:
 
 ```bash
-HEADROOM_ANALYTICS_URL=http://127.0.0.1:8010 \
+HEADROOM_ANALYTICS_URL=http://127.0.0.1:28010 \
 uv run python scripts/e2e_headroom_ccr_smoke.py
 
-HEADROOM_ANALYTICS_URL=http://127.0.0.1:8010 \
+HEADROOM_ANALYTICS_URL=http://127.0.0.1:28010 \
   uv run python scripts/e2e_litellm_buffer_smoke.py
 
 uv run python scripts/e2e_mcp_otel_smoke.py
@@ -171,11 +171,11 @@ The smoke script verifies `/ready`, `POST /ingest/compression`,
 Endpoint spot checks for the same marker:
 
 ```bash
-curl -fsS 'http://127.0.0.1:8010/dashboard?data_scope=test&provider=dashboard-provider-1782222979&model=dashboard-model-1782222979&strategy=dashboard-strategy-1782222979&tenant_id=dashboard-tenant-1782222979&team_id=dashboard-team-1782222979&preset=all&live=true'
+curl -fsS 'http://127.0.0.1:28010/dashboard?data_scope=test&provider=dashboard-provider-1782222979&model=dashboard-model-1782222979&strategy=dashboard-strategy-1782222979&tenant_id=dashboard-tenant-1782222979&team_id=dashboard-team-1782222979&preset=all&live=true'
 
-curl -fsS 'http://127.0.0.1:8010/dashboard/partials/live?data_scope=test&provider=dashboard-provider-1782222979&model=dashboard-model-1782222979&strategy=dashboard-strategy-1782222979&tenant_id=dashboard-tenant-1782222979&team_id=dashboard-team-1782222979&preset=all'
+curl -fsS 'http://127.0.0.1:28010/dashboard/partials/live?data_scope=test&provider=dashboard-provider-1782222979&model=dashboard-model-1782222979&strategy=dashboard-strategy-1782222979&tenant_id=dashboard-tenant-1782222979&team_id=dashboard-team-1782222979&preset=all'
 
-curl -fsS 'http://127.0.0.1:8010/dashboard?preset=all&provider=dashboard-provider-1782222979-no-match&live=false'
+curl -fsS 'http://127.0.0.1:28010/dashboard?preset=all&provider=dashboard-provider-1782222979-no-match&live=false'
 ```
 
 Expected evidence:
@@ -254,15 +254,15 @@ Take snapshots after the smoke commands complete:
 
 ```bash
 # Default operational scope; smoke rows should not inflate this view.
-curl -fsS http://127.0.0.1:8010/stats
+curl -fsS http://127.0.0.1:28010/stats
 
 # Explicit test scope for seeded smoke rows.
-curl -fsS 'http://127.0.0.1:8010/stats?data_scope=test&provider=openai&model=gpt-smoke'
-curl -fsS 'http://127.0.0.1:8010/stats/breakdown?data_scope=test&group_by=provider'
-curl -fsS 'http://127.0.0.1:8010/stats/dashboard?data_scope=test&provider=openai'
-curl -fsS 'http://127.0.0.1:8010/records/compression?data_scope=test&limit=10'
-curl -fsS 'http://127.0.0.1:8010/simulations/runs?limit=10'
-curl -fsS http://127.0.0.1:8010/metrics | sed -n '1,40p'
+curl -fsS 'http://127.0.0.1:28010/stats?data_scope=test&provider=openai&model=gpt-smoke'
+curl -fsS 'http://127.0.0.1:28010/stats/breakdown?data_scope=test&group_by=provider'
+curl -fsS 'http://127.0.0.1:28010/stats/dashboard?data_scope=test&provider=openai'
+curl -fsS 'http://127.0.0.1:28010/records/compression?data_scope=test&limit=10'
+curl -fsS 'http://127.0.0.1:28010/simulations/runs?limit=10'
+curl -fsS http://127.0.0.1:28010/metrics | sed -n '1,40p'
 ```
 
 Expected evidence:
@@ -357,7 +357,7 @@ Do not select `original_content` or `compressed_content` for routine evidence.
 
 ## Phoenix
 
-Open <http://127.0.0.1:6006> and inspect the configured project
+Open <http://127.0.0.1:26006> and inspect the configured project
 `litellm-proxy-headroom`.
 
 Phoenix project routing is part of the evidence. Phoenix docs state that traces
@@ -370,8 +370,6 @@ the `litellm-proxy-headroom` project rather than only in `default`.
 Current evidence expectations:
 
 - LiteLLM traces arrive through the existing OTel configuration.
-- Open WebUI does not export OTel traces by default; its health checks and
-  sqlite connection spans are treated as Phoenix noise.
 - Content capture remains disabled by default.
 - Analytics backend traces arrive through the configured OTel exporter when
   backend OTel is enabled.

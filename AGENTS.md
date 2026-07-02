@@ -2,9 +2,9 @@
 
 ## Minimal Integration Rule
 
-This repo should stay a thin deployment wrapper around LiteLLM, Open WebUI,
-Phoenix, and the repo-owned analytics backend. Headroom is a library dependency
-only, not an operator-facing service in this repository.
+This repo should stay a thin deployment wrapper around LiteLLM, Phoenix, and
+the repo-owned analytics backend. Headroom is a library dependency only, not an
+operator-facing service in this repository.
 
 - Prefer documented extension points: LiteLLM YAML config, LiteLLM callbacks,
   FastAPI/ASGI routes and mounts owned by this repo, Docker Compose service

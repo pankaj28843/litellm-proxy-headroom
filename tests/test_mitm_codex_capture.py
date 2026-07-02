@@ -205,8 +205,8 @@ def test_mitm_codex_capture_threads_marker_env_for_proxy_lane(tmp_path: Path) ->
     plan = runner.build_plan(args)
 
     assert plan["codex"]["environment"] == {
-        "CODEX_LITELLM_ANALYTICS_URL": "http://127.0.0.1:8010",
-        "CODEX_LITELLM_BASE_URL": "http://127.0.0.1:4000",
+        "CODEX_LITELLM_ANALYTICS_URL": "http://127.0.0.1:28010",
+        "CODEX_LITELLM_BASE_URL": "http://10.20.30.1:24040",
         "CODEX_LITELLM_CLIENT": "codex",
         "CODEX_LITELLM_MODEL": "gpt-5.4-mini",
         "CODEX_LITELLM_MODEL_VERBOSITY": "low",

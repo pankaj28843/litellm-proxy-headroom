@@ -91,6 +91,7 @@ RESPONSES_CODEX_HEADER_PASSTHROUGH_ENV = (
     "HEADROOM_RESPONSES_CODEX_HEADER_PASSTHROUGH"
 )
 RESPONSES_CHATGPT_SESSION_AFFINITY_ENV = "HEADROOM_RESPONSES_CHATGPT_SESSION_AFFINITY"
+DEBUG_PAYLOAD_SHAPES_ENV = "LITELLM_PROXY_DEBUG_PAYLOAD_SHAPES"
 RESPONSES_CHATGPT_SESSION_AFFINITY_PREFIX = "codex-cache"
 RESPONSES_CODEX_HEADER_PASSTHROUGH_NAMES = frozenset(
     {
@@ -167,6 +168,10 @@ RESPONSES_CACHE_DIAGNOSTIC_VOLATILE_TOP_LEVEL_KEYS = frozenset(
     }
 )
 COMPRESSION_HEADER_DISABLED_VALUES = frozenset({"0", "false", "no", "off", "disabled"})
+LOCAL_WRAPPER_SYSTEM_AS_USER_CLIENTS = frozenset(
+    {"claude", "copilot", "opencode", "pi"}
+)
+WRAPPER_SYSTEM_AS_USER_PREFIX = "System instructions:\n\n"
 
 
 @dataclass(frozen=True, slots=True)
@@ -443,7 +448,8 @@ def _metadata_value(metadata: dict[str, Any], *keys: str) -> str | None:
 
 def _proxy_client_from_data(data: dict[str, Any]) -> str | None:
     return _sanitized_metadata_text(
-        _header_value(_proxy_request_headers(data), PROXY_CLIENT_HEADER),
+        _header_value(_proxy_request_headers(data), PROXY_CLIENT_HEADER)
+        or _metadata_value(_metadata(data), "litellm_proxy_client", PROXY_CLIENT_HEADER),
         max_length=64,
     )
 
@@ -693,8 +699,6 @@ def _request_key_from_data(data: dict[str, Any]) -> str:
         "request_id",
         "litellm_call_id",
         "trace_id",
-        "x-openwebui-message-id",
-        "x-openwebui-chat-id",
     ):
         value = metadata.get(key) or data.get(key)
         if value:
@@ -806,6 +810,97 @@ def _message_text(message: dict[str, Any]) -> str | None:
                 parts.append(part["text"])
         return "\n".join(parts) if parts else None
     return None
+
+
+def _content_text(value: Any) -> str | None:
+    if isinstance(value, str):
+        return value
+    if isinstance(value, list):
+        parts: list[str] = []
+        for item in value:
+            text = _content_text(item)
+            if text:
+                parts.append(text)
+        return "\n".join(parts) if parts else None
+    if isinstance(value, dict):
+        text = value.get("text")
+        if isinstance(text, str):
+            return text
+        content = value.get("content")
+        if content is not None:
+            return _content_text(content)
+    return None
+
+
+def _move_wrapper_system_to_user_message(data: dict[str, Any]) -> bool:
+    client = _proxy_client_from_data(data)
+    if not client or client.split("-", 1)[0] not in LOCAL_WRAPPER_SYSTEM_AS_USER_CLIENTS:
+        return False
+
+    messages = data.get("messages")
+    if not isinstance(messages, list):
+        return False
+
+    system_parts: list[str] = []
+    if "system" in data:
+        system_text = _content_text(data.pop("system"))
+        if system_text:
+            system_parts.append(system_text)
+
+    user_messages: list[Any] = []
+    for message in messages:
+        if isinstance(message, dict) and message.get("role") == "system":
+            system_text = _message_text(message) or _content_text(message)
+            if system_text:
+                system_parts.append(system_text)
+            continue
+        user_messages.append(message)
+
+    if not system_parts:
+        data["messages"] = user_messages
+        return False
+
+    data["messages"] = [
+        {
+            "role": "user",
+            "content": WRAPPER_SYSTEM_AS_USER_PREFIX + "\n\n".join(system_parts),
+        },
+        *user_messages,
+    ]
+    return True
+
+
+def _payload_debug_shape(data: dict[str, Any], call_type: str) -> dict[str, Any]:
+    messages = data.get("messages")
+    input_value = data.get("input")
+    metadata = _metadata(data)
+    headers = _proxy_request_headers(data)
+    return {
+        "call_type": call_type,
+        "client": _proxy_client_from_data(data),
+        "keys": sorted(
+            key
+            for key in data
+            if key not in {"api_key", "headers", "user_api_key"}
+        ),
+        "metadata_keys": sorted(metadata),
+        "proxy_header_keys": sorted(headers),
+        "message_roles": [
+            message.get("role") if isinstance(message, dict) else type(message).__name__
+            for message in messages
+        ]
+        if isinstance(messages, list)
+        else None,
+        "input_type": type(input_value).__name__ if input_value is not None else None,
+        "input_item_types": [
+            item.get("type") if isinstance(item, dict) else type(item).__name__
+            for item in input_value[:8]
+        ]
+        if isinstance(input_value, list)
+        else None,
+        "has_system": "system" in data,
+        "has_instructions": "instructions" in data,
+    }
 
 
 def _json_token_text(value: Any) -> str:
@@ -1553,10 +1648,16 @@ class HeadroomAnalyticsCallback(_HeadroomLiteLLMCallback, CustomLogger):
         if call_type not in ("completion", "acompletion", "responses", "aresponses"):
             return data
 
-        messages = data.get("messages", [])
         model = str(data.get("model") or DEFAULT_MODEL)
 
         request_key = _ensure_request_key(data)
+        if _env_flag_enabled(DEBUG_PAYLOAD_SHAPES_ENV):
+            logger.warning(
+                "litellm_callback_payload_shape=%s",
+                json.dumps(_payload_debug_shape(data, call_type), sort_keys=True),
+            )
+        _move_wrapper_system_to_user_message(data)
+        messages = data.get("messages", [])
 
         if not messages:
             if data.get("input") is not None:

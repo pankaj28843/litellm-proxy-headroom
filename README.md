@@ -11,7 +11,7 @@ uv sync
 Run the owned LiteLLM proxy:
 
 ```bash
-uv run litellm --config config/litellm.yaml --host 127.0.0.1 --port 4000
+uv run litellm --config config/litellm.yaml --host 10.20.30.1 --port 24040
 ```
 
 The LiteLLM config uses ChatGPT's `chatgpt/` provider route and a config-local
@@ -61,7 +61,7 @@ uv run alembic upgrade head
 Run the custom analytics backend locally:
 
 ```bash
-uv run uvicorn litellm_proxy_headroom.analytics.adapters.api.app:create_app --factory --host 127.0.0.1 --port 8010
+uv run uvicorn litellm_proxy_headroom.analytics.adapters.api.app:create_app --factory --host 127.0.0.1 --port 28010
 ```
 
 Smoke the backend ingress/retrieval/stats/metrics path:
@@ -73,14 +73,14 @@ uv run python scripts/e2e_analytics_smoke.py
 Smoke the CCR adapter contract used by the imported compression library:
 
 ```bash
-HEADROOM_ANALYTICS_URL=http://127.0.0.1:8010 \
+HEADROOM_ANALYTICS_URL=http://127.0.0.1:28010 \
   uv run python scripts/e2e_headroom_ccr_smoke.py
 ```
 
 Smoke the buffered LiteLLM callback ingestion path:
 
 ```bash
-HEADROOM_ANALYTICS_URL=http://127.0.0.1:8010 \
+HEADROOM_ANALYTICS_URL=http://127.0.0.1:28010 \
   uv run python scripts/e2e_litellm_buffer_smoke.py
 ```
 
@@ -101,7 +101,7 @@ uv run python scripts/e2e_dashboard_stats_smoke.py
 The analytics dashboard is served by the custom backend at:
 
 ```text
-http://127.0.0.1:8010/dashboard
+http://127.0.0.1:28010/dashboard
 ```
 
 It is a server-rendered Jinja/HTMX dashboard backed by the same PostgreSQL
@@ -160,7 +160,7 @@ operational trade-offs, use
 The custom analytics backend exposes MCP at:
 
 ```text
-http://127.0.0.1:8010/mcp/
+http://127.0.0.1:28010/mcp/
 ```
 
 CCR marker retrieval stays on the local analytics path. Imported compression
@@ -247,13 +247,12 @@ make
 That creates `.env` from `.env.example` if needed, creates local runtime
 directories, builds the shared Python image, and starts:
 
-- LiteLLM API: <http://127.0.0.1:4000>
-- Open WebUI: <http://127.0.0.1:8080>
-- Phoenix: <http://127.0.0.1:6006>
+- LiteLLM API on vmbr0 for this host and sibling VMs: <http://10.20.30.1:24040>
+- Phoenix: <http://127.0.0.1:26006>
 - Phoenix PostgreSQL on the private Compose network
 - Analytics PostgreSQL: `127.0.0.1:${ANALYTICS_POSTGRES_PORT:-55432}`
-- Analytics backend: <http://127.0.0.1:8010>
-- Analytics MCP: <http://127.0.0.1:8010/mcp/>
+- Analytics backend: <http://127.0.0.1:28010>
+- Analytics MCP: <http://127.0.0.1:28010/mcp/>
 
 Useful targets:
 
@@ -284,7 +283,8 @@ Use the repo-owned wrappers when running agent CLIs through this LiteLLM stack:
 ./bin/opencode-litellm --help
 ./bin/opencode-litellm run --format json "reply with a short health marker"
 
-./bin/copilot-litellm --version
+./bin/copilot-litellm -s --no-custom-instructions --stream off \
+  -p "reply with a short health marker"
 
 ./bin/pi-litellm --version
 ./bin/pi-litellm --mode json --no-tools -p "reply with a short health marker"
@@ -354,7 +354,7 @@ first-party Codex account snapshots remain the quota proof.
 `bin/codex-litellm` sets `CODEX_HOME` to the managed `~/.codex-headroom`
 directory, writes `config.toml` and `litellm.config.toml`, symlinks native
 Codex state such as `sessions` and `auth.json` from `~/.codex`, configures the
-LiteLLM Responses provider at `http://127.0.0.1:4000/v1`, and adds the
+LiteLLM Responses provider at `http://10.20.30.1:24040/v1`, and adds the
 analytics MCP endpoint for local compression-marker retrieval. The wrapper refuses
 `CODEX_LITELLM_HOME=$HOME/.codex` by default because it does not own Headroom's
 snapshot/unwrap machinery for mutating a user's native Codex config; choose an
@@ -367,10 +367,10 @@ because they can bypass the generated LiteLLM provider; omit `--profile`, use
 `--profile litellm`, or set
 `CODEX_LITELLM_ALLOW_PROFILE_OVERRIDE=1` only for deliberate debugging. Set
 `CODEX_LITELLM_BASE_URL` when the local LiteLLM service is not on
-`http://127.0.0.1:4000`; the wrapper normalizes it to the `/v1` OpenAI-compatible
+`http://10.20.30.1:24040`; the wrapper normalizes it to the `/v1` OpenAI-compatible
 base URL used by both `OPENAI_BASE_URL` and the generated Codex provider. Set
 `CODEX_LITELLM_ANALYTICS_URL` when the analytics backend is not on
-`http://127.0.0.1:8010`; the wrapper normalizes it to the local analytics
+`http://127.0.0.1:28010`; the wrapper normalizes it to the local analytics
 `/mcp/` endpoint. Set `CODEX_LITELLM_REASONING_EFFORT` to `minimal`, `low`,
 `medium`, `high`, or `xhigh` when the isolated profile should pin Codex
 `model_reasoning_effort`. Set `CODEX_LITELLM_MODEL_VERBOSITY` to `low`,
@@ -396,9 +396,9 @@ LiteLLM, and writes a generated analytics MCP config under `~/.claude-headroom`
 by default. Set `CLAUDE_LITELLM_HOME` to move that managed home, or
 `CLAUDE_LITELLM_STATE_DIR` to override the generated state directory in
 wrapper tests/scripts.
-Set `CLAUDE_LITELLM_BASE_URL` when LiteLLM is not on `http://127.0.0.1:4000`,
+Set `CLAUDE_LITELLM_BASE_URL` when LiteLLM is not on `http://10.20.30.1:24040`,
 and `CLAUDE_LITELLM_ANALYTICS_URL` when analytics is not on
-`http://127.0.0.1:8010`. The wrapper also appends local
+`http://127.0.0.1:28010`. The wrapper also appends local
 `X-LLM-Proxy-Client`, `X-LLM-Proxy-Project`, and optional
 `X-LLM-Proxy-Run` headers through Claude Code's `ANTHROPIC_CUSTOM_HEADERS`
 surface for analytics correlation. It preserves existing custom headers and
@@ -418,7 +418,7 @@ managed `~/.opencode-headroom` home by default, writes a generated
 and references `LITELLM_MASTER_KEY` through `{env:LITELLM_MASTER_KEY}` instead
 of copying the key. Set `OPENCODE_LITELLM_HOME` to move the managed home. Set
 `OPENCODE_LITELLM_BASE_URL` and `OPENCODE_LITELLM_ANALYTICS_URL` when services
-are not on `http://127.0.0.1:4000` and `http://127.0.0.1:8010`. The wrapper
+are not on `http://10.20.30.1:24040` and `http://127.0.0.1:28010`. The wrapper
 pins `--model litellm/gpt-5.5` for run-style commands unless the command
 already supplies `--model`. `opencode models litellm`, a real `gpt-5.4-mini`
 smoke run, and a real practical `gpt-5.5` series have reached LiteLLM with
@@ -433,15 +433,15 @@ the local LiteLLM OpenAI-compatible endpoint. It maps `LITELLM_MASTER_KEY` to
 `COPILOT_PROVIDER_BEARER_TOKEN`, sets `COPILOT_PROVIDER_BASE_URL` from
 `COPILOT_LITELLM_BASE_URL` normalized to `/v1`, uses
 `COPILOT_PROVIDER_TYPE=openai`, and defaults to
-`COPILOT_PROVIDER_WIRE_API=responses` for GPT-5.x models. Set
+`COPILOT_PROVIDER_WIRE_API=responses` for GPT-5.x models. Copilot CLI still
+requires its own supported `--model` selector, so the wrapper adds
+`--model gpt-4.1` for prompt-style calls unless one is already supplied. Set
+`COPILOT_LITELLM_CLI_MODEL` for that Copilot-facing selector and
 `COPILOT_LITELLM_MODEL`, `COPILOT_LITELLM_PROVIDER_MODEL_ID`, or
-`COPILOT_LITELLM_WIRE_MODEL` when Copilot's agent configuration model and the
-LiteLLM wire model should differ. Current proof: real Copilot CLI 1.0.65
-`gpt-5.4-mini` smoke and three-call `gpt-5.5` practical series route through
-LiteLLM by narrow time-window DB correlation. The latest practical aggregate
-has 3 provider-reported `/v1/responses` rows, input `47216`, total `47482`,
-cached input absent, and observed cost unavailable, so cache/cost usefulness is
-not claimed.
+`COPILOT_LITELLM_WIRE_MODEL` for the LiteLLM provider model. Current proof:
+real Copilot CLI `gpt-4.1` selector with `gpt-5.4-mini` provider wire model
+routes through LiteLLM and returns the expected smoke marker. Cache/cost
+usefulness is not claimed.
 
 For marker-capable wrappers, use `*_LITELLM_COMPRESSION_MODE=off` only as a
 proof baseline. Codex, Claude Code, OpenCode, and Pi normalize that setting to
@@ -512,14 +512,14 @@ comparison to decide whether a provider-token/cache delta was measured over
 comparable agent behavior.
 
 Before `--execute` spends provider calls, the harness checks that LiteLLM is
-reachable at `--litellm-url` (default `http://127.0.0.1:4000`) and that
+reachable at `--litellm-url` (default `http://10.20.30.1:24040`) and that
 `/v1/models` advertises the pinned Codex model. It also checks
 `/callbacks/list` for the local `HeadroomCallback`, so a proxy that is live but
 missing the compression callback fails before Codex runs. If `LITELLM_MASTER_KEY`
 is present in the harness environment, these LiteLLM preflights send it as a
 bearer token; artifacts record only that auth was used, never the key value.
 With `--query-db`, it also requires analytics readiness at
-`--analytics-url/ready` (default `http://127.0.0.1:8010/ready`). A failed
+`--analytics-url/ready` (default `http://127.0.0.1:28010/ready`). A failed
 preflight writes `preflight-result.json` and a top-level `summary.json` with no
 lane results, then exits before direct or proxy Codex runs. Use
 `--skip-preflight` only for intentional fixture/smoke runs where the services
@@ -617,12 +617,9 @@ without printing its contents.
 
 The compose stack sends LiteLLM OTel v2 traces to Phoenix using the
 `arize_phoenix` callback and keeps prompt/response capture disabled with
-`OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=no_content`. Open WebUI is
-configured to forward OpenAI-compatible requests directly to the owned LiteLLM
-service, but its own OTel exporter is disabled so routine UI health checks and
-sqlite connection spans do not pollute Phoenix. The analytics backend sends
-traces to Phoenix when OTel is enabled and continues to expose `/dashboard`,
-`/health`, `/ready`, `/stats`, `/metrics`, `/stats/dashboard`,
+`OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=no_content`. The analytics
+backend sends traces to Phoenix when OTel is enabled and continues to expose
+`/dashboard`, `/health`, `/ready`, `/stats`, `/metrics`, `/stats/dashboard`,
 `/records/compression`, `/simulations/runs`, and `/mcp/` independently.
 
 ## Compression Library Callback Boundary

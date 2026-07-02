@@ -198,7 +198,7 @@ def main(argv: list[str]) -> int:
 
     try:
         litellm_base_url = normalize_base_url(
-            os.environ.get("PI_LITELLM_BASE_URL", "http://127.0.0.1:4000"),
+            os.environ.get("PI_LITELLM_BASE_URL", "http://10.20.30.1:24040"),
             env_name="PI_LITELLM_BASE_URL",
             suffix="/v1",
         )

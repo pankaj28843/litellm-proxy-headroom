@@ -146,13 +146,13 @@ def test_codex_wrapper_generates_responses_provider_config(tmp_path: Path) -> No
     assert capture["codex_litellm_model_verbosity"] == "low"
     assert capture["codex_litellm_compression_mode"] == "off"
     assert capture["openai_api_key_present"] is True
-    assert capture["openai_base_url"] == "http://127.0.0.1:4000/v1"
+    assert capture["openai_base_url"] == "http://10.20.30.1:24040/v1"
 
     base_config = tomllib.loads((codex_home / "config.toml").read_text())
     profile_config = tomllib.loads((codex_home / "litellm.config.toml").read_text())
 
     assert base_config["mcp_servers"]["analytics"]["url"] == (
-        "http://127.0.0.1:8010/mcp/"
+        "http://127.0.0.1:28010/mcp/"
     )
     assert set(base_config["mcp_servers"]) == {"analytics"}
     assert "headroom" not in base_config["mcp_servers"]
@@ -160,11 +160,11 @@ def test_codex_wrapper_generates_responses_provider_config(tmp_path: Path) -> No
     assert profile_config["model_reasoning_effort"] == "high"
     assert profile_config["model_verbosity"] == "low"
     assert profile_config["model_provider"] == "litellm"
-    assert profile_config["openai_base_url"] == "http://127.0.0.1:4000/v1"
+    assert profile_config["openai_base_url"] == "http://10.20.30.1:24040/v1"
     provider = profile_config["model_providers"]["litellm"]
     assert provider == {
         "name": "Local LiteLLM",
-        "base_url": "http://127.0.0.1:4000/v1",
+        "base_url": "http://10.20.30.1:24040/v1",
         "env_key": "OPENAI_API_KEY",
         "wire_api": "responses",
         "supports_websockets": False,
@@ -352,9 +352,9 @@ requires_openai_auth = true
     assert profile_config["model_reasoning_effort"] == "xhigh"
     assert profile_config["model_verbosity"] == "medium"
     assert profile_config["model_provider"] == "litellm"
-    assert profile_config["openai_base_url"] == "http://127.0.0.1:4000/v1"
+    assert profile_config["openai_base_url"] == "http://10.20.30.1:24040/v1"
     assert profile_config["model_providers"]["litellm"]["base_url"] == (
-        "http://127.0.0.1:4000/v1"
+        "http://10.20.30.1:24040/v1"
     )
 
     assert base_config["approval_policy"] == "never"
@@ -787,7 +787,7 @@ def test_claude_wrapper_generates_mcp_config_and_gateway_env(tmp_path: Path) -> 
     )
 
     capture = json.loads(capture_path.read_text())
-    assert capture["anthropic_base_url"] == "http://127.0.0.1:4000"
+    assert capture["anthropic_base_url"] == "http://10.20.30.1:24040"
     assert capture["anthropic_auth_token_present"] is True
     assert capture["anthropic_api_key_present"] is True
     assert capture["anthropic_custom_headers"] == "\n".join(
@@ -816,7 +816,7 @@ def test_claude_wrapper_generates_mcp_config_and_gateway_env(tmp_path: Path) -> 
         "mcpServers": {
             "analytics": {
                 "type": "http",
-                "url": "http://127.0.0.1:8010/mcp/",
+                "url": "http://127.0.0.1:28010/mcp/",
             }
         }
     }
@@ -896,7 +896,7 @@ def test_claude_wrapper_rejects_litellm_base_url_with_credentials(
 
     env = _base_env(fake_bin, capture_path)
     env["HOME"] = str(tmp_path)
-    env["CLAUDE_LITELLM_BASE_URL"] = "http://user:secret@127.0.0.1:4000"
+    env["CLAUDE_LITELLM_BASE_URL"] = "http://user:secret@10.20.30.1:24040"
 
     result = subprocess.run(
         [str(REPO_ROOT / "bin/claude-litellm"), "--print", "health marker"],
@@ -958,7 +958,7 @@ def test_opencode_wrapper_generates_managed_config_and_env(tmp_path: Path) -> No
     assert config["model"] == "litellm/gpt-5.5"
     assert config["small_model"] == "litellm/gpt-5.4-mini"
     assert provider["npm"] == "@ai-sdk/openai-compatible"
-    assert provider["options"]["baseURL"] == "http://127.0.0.1:4000/v1"
+    assert provider["options"]["baseURL"] == "http://10.20.30.1:24040/v1"
     assert provider["options"]["apiKey"] == "{env:LITELLM_MASTER_KEY}"
     assert provider["options"]["headers"] == {
         "X-LLM-Proxy-Client": "{env:OPENCODE_LITELLM_CLIENT}",
@@ -968,7 +968,7 @@ def test_opencode_wrapper_generates_managed_config_and_env(tmp_path: Path) -> No
     }
     assert config["mcp"]["analytics"] == {
         "type": "remote",
-        "url": "http://127.0.0.1:8010/mcp/",
+        "url": "http://127.0.0.1:28010/mcp/",
         "enabled": True,
         "oauth": False,
     }
@@ -1047,7 +1047,7 @@ def test_opencode_wrapper_rejects_litellm_base_url_with_credentials(
 
     env = _base_env(fake_bin, capture_path)
     env["OPENCODE_LITELLM_HOME"] = str(managed_home)
-    env["OPENCODE_LITELLM_BASE_URL"] = "http://user:secret@127.0.0.1:4000"
+    env["OPENCODE_LITELLM_BASE_URL"] = "http://user:secret@10.20.30.1:24040"
 
     result = subprocess.run(
         [str(REPO_ROOT / "bin/opencode-litellm"), "run", "health marker"],
@@ -1102,7 +1102,7 @@ def test_pi_wrapper_generates_managed_models_config_and_env(tmp_path: Path) -> N
 
     config = json.loads(models_path.read_text())
     provider = config["providers"]["litellm"]
-    assert provider["baseUrl"] == "http://127.0.0.1:4000/v1"
+    assert provider["baseUrl"] == "http://10.20.30.1:24040/v1"
     assert provider["api"] == "openai-responses"
     assert provider["apiKey"] == "$LITELLM_MASTER_KEY"
     assert provider["models"] == [
@@ -1203,7 +1203,7 @@ def test_pi_wrapper_rejects_litellm_base_url_with_credentials(
 
     env = _base_env(fake_bin, capture_path)
     env["PI_LITELLM_HOME"] = str(managed_home)
-    env["PI_LITELLM_BASE_URL"] = "http://user:secret@127.0.0.1:4000"
+    env["PI_LITELLM_BASE_URL"] = "http://user:secret@10.20.30.1:24040"
 
     result = subprocess.run(
         [str(REPO_ROOT / "bin/pi-litellm"), "-p", "health marker"],
@@ -1241,8 +1241,8 @@ def test_copilot_wrapper_defaults_to_managed_home(tmp_path: Path) -> None:
     assert capture["args"] == ["--version"]
     assert capture["copilot_home"] == str(managed_home)
     assert capture["copilot_auto_update"] == "false"
-    assert capture["copilot_model"] == "gpt-5.5"
-    assert capture["copilot_provider_base_url"] == "http://127.0.0.1:4000/v1"
+    assert capture["copilot_model"] == "gpt-4.1"
+    assert capture["copilot_provider_base_url"] == "http://10.20.30.1:24040/v1"
     assert capture["copilot_provider_type"] == "openai"
     assert capture["copilot_provider_api_key_present"] is False
     assert capture["copilot_provider_bearer_token_present"] is True
@@ -1281,7 +1281,7 @@ def test_copilot_wrapper_respects_explicit_config_dir(tmp_path: Path) -> None:
     capture = json.loads(capture_path.read_text())
     assert capture["args"] == ["--config-dir", str(config_dir), "--version"]
     assert capture["copilot_home"] == str(config_dir)
-    assert capture["copilot_provider_base_url"] == "http://127.0.0.1:4000/v1"
+    assert capture["copilot_provider_base_url"] == "http://10.20.30.1:24040/v1"
     assert config_dir.is_dir()
 
 
@@ -1296,6 +1296,7 @@ def test_copilot_wrapper_uses_configured_litellm_provider(tmp_path: Path) -> Non
     env["HOME"] = str(tmp_path)
     env["COPILOT_LITELLM_HOME"] = str(managed_home)
     env["COPILOT_LITELLM_BASE_URL"] = "http://127.0.0.1:4100"
+    env["COPILOT_LITELLM_CLI_MODEL"] = "gpt-4.1"
     env["COPILOT_LITELLM_MODEL"] = "gpt-5.4-mini"
     env["COPILOT_LITELLM_PROVIDER_MODEL_ID"] = "gpt-5.4"
     env["COPILOT_LITELLM_WIRE_MODEL"] = "gpt-5.4-mini"
@@ -1313,7 +1314,7 @@ def test_copilot_wrapper_uses_configured_litellm_provider(tmp_path: Path) -> Non
     capture = json.loads(capture_path.read_text())
     assert capture["copilot_home"] == str(managed_home)
     assert capture["copilot_provider_base_url"] == "http://127.0.0.1:4100/v1"
-    assert capture["copilot_model"] == "gpt-5.4-mini"
+    assert capture["copilot_model"] == "gpt-4.1"
     assert capture["copilot_provider_model_id"] == "gpt-5.4"
     assert capture["copilot_provider_wire_model"] == "gpt-5.4-mini"
     assert capture["copilot_provider_wire_api"] == "responses"
@@ -1346,12 +1347,62 @@ def test_copilot_wrapper_owns_provider_env_over_shell_defaults(
     )
 
     capture = json.loads(capture_path.read_text())
-    assert capture["copilot_model"] == "gpt-5.5"
+    assert capture["copilot_model"] == "gpt-4.1"
     assert capture["copilot_provider_type"] == "openai"
-    assert capture["copilot_provider_base_url"] == "http://127.0.0.1:4000/v1"
+    assert capture["copilot_provider_base_url"] == "http://10.20.30.1:24040/v1"
     assert capture["copilot_provider_wire_api"] == "responses"
     assert capture["copilot_provider_model_id"] == "gpt-5.5"
     assert capture["copilot_provider_wire_model"] == "gpt-5.5"
+
+
+def test_copilot_wrapper_adds_cli_model_for_provider_calls(tmp_path: Path) -> None:
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    _write_fake_cli(fake_bin / "copilot")
+    capture_path = tmp_path / "capture.json"
+
+    env = _base_env(fake_bin, capture_path)
+    env["HOME"] = str(tmp_path)
+    env["COPILOT_LITELLM_MODEL"] = "gpt-5.4-mini"
+
+    subprocess.run(
+        [str(REPO_ROOT / "bin/copilot-litellm"), "-p", "health marker"],
+        check=True,
+        cwd=REPO_ROOT,
+        env=env,
+    )
+
+    capture = json.loads(capture_path.read_text())
+    assert capture["args"] == ["--model", "gpt-4.1", "-p", "health marker"]
+    assert capture["copilot_model"] == "gpt-4.1"
+    assert capture["copilot_provider_model_id"] == "gpt-5.4-mini"
+    assert capture["copilot_provider_wire_model"] == "gpt-5.4-mini"
+
+
+def test_copilot_wrapper_preserves_explicit_cli_model(tmp_path: Path) -> None:
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    _write_fake_cli(fake_bin / "copilot")
+    capture_path = tmp_path / "capture.json"
+
+    env = _base_env(fake_bin, capture_path)
+    env["HOME"] = str(tmp_path)
+
+    subprocess.run(
+        [
+            str(REPO_ROOT / "bin/copilot-litellm"),
+            "--model",
+            "gpt-5-mini",
+            "-p",
+            "health marker",
+        ],
+        check=True,
+        cwd=REPO_ROOT,
+        env=env,
+    )
+
+    capture = json.loads(capture_path.read_text())
+    assert capture["args"] == ["--model", "gpt-5-mini", "-p", "health marker"]
 
 
 def test_copilot_wrapper_rejects_litellm_base_url_with_credentials(
@@ -1364,7 +1415,7 @@ def test_copilot_wrapper_rejects_litellm_base_url_with_credentials(
 
     env = _base_env(fake_bin, capture_path)
     env["HOME"] = str(tmp_path)
-    env["COPILOT_LITELLM_BASE_URL"] = "http://user:secret@127.0.0.1:4000"
+    env["COPILOT_LITELLM_BASE_URL"] = "http://user:secret@10.20.30.1:24040"
 
     result = subprocess.run(
         [str(REPO_ROOT / "bin/copilot-litellm"), "--version"],

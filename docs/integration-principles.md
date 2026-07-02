@@ -1,23 +1,22 @@
 # Integration Principles
 
 This repository should stay a deployment harness around an owned LiteLLM proxy,
-Open WebUI, Phoenix, the custom analytics backend, and a small imported
-compression-library integration. Headroom is an implementation dependency, not
-an operator-facing service in this repository.
+Phoenix, the custom analytics backend, and a small imported compression-library
+integration. Headroom is an implementation dependency, not an operator-facing
+service in this repository.
 
 ## Architecture
 
 Run upstream applications at their documented roots:
 
-- The owned LiteLLM proxy is the public localhost OpenAI-compatible service on
-  port 4000. It owns
+- The owned LiteLLM proxy is the OpenAI-compatible service published on vmbr0
+  for this host and sibling VMs. It owns
   `config/litellm.yaml`, provider configuration, callbacks, and Phoenix tracing.
-- Open WebUI points directly at LiteLLM with
-  `OPENAI_API_BASE_URL=http://litellm:4000/v1`.
-- The custom analytics backend is the localhost analytics surface on port 8010
-  for `/dashboard`, `/health`, `/ready`, `/stats`, `/stats/breakdown`,
-  `/stats/dashboard`, `/records/compression`, `/simulations/runs`, `/metrics`,
-  storage-backed CCR adapter endpoints, and `/mcp/`.
+- The custom analytics backend is the localhost analytics surface on the
+  configured high host port for `/dashboard`, `/health`, `/ready`, `/stats`,
+  `/stats/breakdown`, `/stats/dashboard`, `/records/compression`,
+  `/simulations/runs`, `/metrics`, storage-backed CCR adapter endpoints, and
+  `/mcp/`.
 - Headroom is not a Compose service, CLI, proxy, dashboard, MCP server, or route
   owner. Keep it as an installed library for the LiteLLM callback and
   `CompressionStoreBackend` adapter.
@@ -38,13 +37,13 @@ Compose configuration, and environment variables.
 
 Do not reintroduce a Headroom proxy service. The validated runtime topology is
 the owned LiteLLM proxy loading `config/litellm.yaml`, using the persisted
-ChatGPT OAuth auth file, accepting the Open WebUI API key as a local proxy key,
-preserving Phoenix tracing callbacks, sending analytics to the backend, and
-serving retrieval through the custom MCP endpoint.
+ChatGPT OAuth auth file, preserving Phoenix tracing callbacks, sending
+analytics to the backend, and serving retrieval through the custom MCP
+endpoint.
 
 Usefulness comes before unit tests. Validate the deployed behavior first with
 runtime evidence: LiteLLM `/health`, `/v1/models` and chat completions through
-the Open WebUI-facing path, analytics `/stats` and `/metrics`, backend `/mcp/`,
+the owned proxy path, analytics `/stats` and `/metrics`, backend `/mcp/`,
 PostgreSQL spot checks, logs, and Phoenix/OTel traces. Unit/config tests are
 secondary guards after the real path is known to work.
 
@@ -93,8 +92,8 @@ retrieval accounting, stats, metrics, and dashboard-ready APIs. LiteLLM and
 library adapters talk to it over bounded HTTP; they do not write directly to
 PostgreSQL.
 
-The current runtime keeps LiteLLM as the public localhost OpenAI-compatible
-endpoint. Compression runs inside the LiteLLM callback path as a library
+The current runtime keeps LiteLLM as the OpenAI-compatible endpoint published
+on vmbr0. Compression runs inside the LiteLLM callback path as a library
 integration; the analytics backend owns storage, retrieval accounting, stats,
 metrics, dashboard-ready APIs, and MCP.
 

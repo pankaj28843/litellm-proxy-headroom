@@ -9,7 +9,7 @@ from typing import Any
 
 import httpx
 
-DEFAULT_ANALYTICS_URL = "http://127.0.0.1:8010"
+DEFAULT_ANALYTICS_URL = "http://127.0.0.1:28010"
 
 
 def _load_callback_class() -> type:

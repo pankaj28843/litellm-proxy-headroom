@@ -10,11 +10,11 @@ import httpx
 from e2e_analytics_smoke import _payload
 from fastmcp import Client
 
-DEFAULT_BACKEND_URL = "http://127.0.0.1:8010"
+DEFAULT_BACKEND_URL = "http://127.0.0.1:28010"
 
 
 async def _stats(client: httpx.AsyncClient, backend_url: str) -> dict[str, Any]:
-    response = await client.get(f"{backend_url}/stats")
+    response = await client.get(f"{backend_url}/stats", params={"data_scope": "test"})
     response.raise_for_status()
     return response.json()
 

@@ -16,30 +16,30 @@ from litellm_proxy_headroom.agent_cli.managed_home import (
 def test_normalize_base_url_adds_suffix_and_rejects_secret_url_parts() -> None:
     assert (
         normalize_base_url(
-            "http://127.0.0.1:4000",
+            "http://10.20.30.1:24040",
             env_name="TEST_BASE_URL",
             suffix="/v1",
         )
-        == "http://127.0.0.1:4000/v1"
+        == "http://10.20.30.1:24040/v1"
     )
     assert (
         normalize_base_url(
-            "http://127.0.0.1:8010",
+            "http://127.0.0.1:28010",
             env_name="TEST_ANALYTICS_URL",
             suffix="/mcp",
         )
-        == "http://127.0.0.1:8010/mcp/"
+        == "http://127.0.0.1:28010/mcp/"
     )
 
     with pytest.raises(ValueError, match="TEST_BASE_URL"):
         normalize_base_url(
-            "http://user:secret@127.0.0.1:4000",
+            "http://user:secret@10.20.30.1:24040",
             env_name="TEST_BASE_URL",
             suffix="/v1",
         )
     with pytest.raises(ValueError, match="TEST_BASE_URL"):
         normalize_base_url(
-            "http://127.0.0.1:4000?api_key=secret",
+            "http://10.20.30.1:24040?api_key=secret",
             env_name="TEST_BASE_URL",
             suffix="/v1",
         )
@@ -63,7 +63,7 @@ def test_render_toml_writes_parseable_config_without_secret_magic() -> None:
             "model": "gpt-5.5",
             "model_providers": {
                 "litellm": {
-                    "base_url": "http://127.0.0.1:4000/v1",
+                    "base_url": "http://10.20.30.1:24040/v1",
                     "env_key": "OPENAI_API_KEY",
                 }
             },
@@ -74,7 +74,7 @@ def test_render_toml_writes_parseable_config_without_secret_magic() -> None:
     parsed = tomllib.loads(rendered)
     assert parsed["model"] == "gpt-5.5"
     assert parsed["model_providers"]["litellm"] == {
-        "base_url": "http://127.0.0.1:4000/v1",
+        "base_url": "http://10.20.30.1:24040/v1",
         "env_key": "OPENAI_API_KEY",
     }
     assert "secret" not in rendered

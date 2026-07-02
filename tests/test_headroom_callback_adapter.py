@@ -600,6 +600,184 @@ def test_message_compression_can_be_disabled_by_local_proxy_header(
     assert capture.tokens_saved is None
 
 
+def test_anthropic_wrapper_system_prompt_is_moved_to_user_message(
+    monkeypatch,
+) -> None:
+    from types import SimpleNamespace
+
+    module = load_adapter_module()
+    from litellm_proxy_headroom.analytics.adapters.litellm import callback
+
+    captured = {}
+
+    def fake_compress(**kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace(
+            messages=kwargs["messages"],
+            tokens_before=100,
+            tokens_after=100,
+            tokens_saved=0,
+            compression_ratio=0,
+            transforms_applied=[],
+        )
+
+    monkeypatch.setattr(callback, "compress", fake_compress)
+    data = {
+        "model": "gpt-5.4-mini",
+        "system": [
+            {"type": "text", "text": "use repo instructions"},
+            {"type": "input_text", "text": "prefer terse answers"},
+        ],
+        "messages": [{"role": "user", "content": "say ok"}],
+        "metadata": {"request_id": "claude-system-to-user"},
+        "proxy_server_request": {
+            "headers": {
+                "X-LLM-Proxy-Client": "claude",
+            }
+        },
+    }
+
+    adapter = module.HeadroomCallback()
+    result = asyncio.run(
+        adapter.async_pre_call_hook(data=data, call_type="acompletion")
+    )
+
+    assert result is data
+    assert "system" not in data
+    assert data["messages"] == [
+        {
+            "role": "user",
+            "content": (
+                "System instructions:\n\n"
+                "use repo instructions\nprefer terse answers"
+            ),
+        },
+        {"role": "user", "content": "say ok"},
+    ]
+    assert captured["messages"] == data["messages"]
+    capture = adapter._pending["claude-system-to-user"]
+    assert capture.request_metadata["litellm_proxy_client"] == "claude"
+
+
+def test_local_wrapper_system_role_message_is_moved_to_user_message(
+    monkeypatch,
+) -> None:
+    from types import SimpleNamespace
+
+    module = load_adapter_module()
+    from litellm_proxy_headroom.analytics.adapters.litellm import callback
+
+    def fake_compress(**kwargs):
+        return SimpleNamespace(
+            messages=kwargs["messages"],
+            tokens_before=100,
+            tokens_after=100,
+            tokens_saved=0,
+            compression_ratio=0,
+            transforms_applied=[],
+        )
+
+    monkeypatch.setattr(callback, "compress", fake_compress)
+    for client in ("opencode", "copilot", "pi"):
+        data = {
+            "model": "gpt-5.4-mini",
+            "messages": [
+                {"role": "system", "content": f"system from {client} client"},
+                {"role": "user", "content": "say ok"},
+            ],
+            "metadata": {"request_id": f"{client}-system-to-user"},
+            "proxy_server_request": {
+                "headers": {
+                    "X-LLM-Proxy-Client": client,
+                }
+            },
+        }
+
+        adapter = module.HeadroomCallback()
+        result = asyncio.run(
+            adapter.async_pre_call_hook(data=data, call_type="acompletion")
+        )
+
+        assert result is data
+        assert data["messages"] == [
+            {
+                "role": "user",
+                "content": f"System instructions:\n\nsystem from {client} client",
+            },
+            {"role": "user", "content": "say ok"},
+        ]
+
+
+def test_local_wrapper_system_role_message_uses_metadata_client(
+    monkeypatch,
+) -> None:
+    from types import SimpleNamespace
+
+    module = load_adapter_module()
+    from litellm_proxy_headroom.analytics.adapters.litellm import callback
+
+    def fake_compress(**kwargs):
+        return SimpleNamespace(
+            messages=kwargs["messages"],
+            tokens_before=100,
+            tokens_after=100,
+            tokens_saved=0,
+            compression_ratio=0,
+            transforms_applied=[],
+        )
+
+    monkeypatch.setattr(callback, "compress", fake_compress)
+    data = {
+        "model": "gpt-5.4-mini",
+        "messages": [
+            {"role": "system", "content": "system from internal call metadata"},
+            {"role": "user", "content": "say ok"},
+        ],
+        "metadata": {
+            "request_id": "metadata-system-to-user",
+            "litellm_proxy_client": "claude",
+        },
+    }
+
+    adapter = module.HeadroomCallback()
+    result = asyncio.run(
+        adapter.async_pre_call_hook(data=data, call_type="acompletion")
+    )
+
+    assert result is data
+    assert data["messages"] == [
+        {
+            "role": "user",
+            "content": "System instructions:\n\nsystem from internal call metadata",
+        },
+        {"role": "user", "content": "say ok"},
+    ]
+
+
+def test_codex_responses_system_instructions_are_not_rewritten() -> None:
+    callback = load_adapter_callback()()
+    data = {
+        "model": "gpt-5.4-mini",
+        "instructions": "codex system instructions",
+        "input": "codex task",
+        "metadata": {"request_id": "codex-system-untouched"},
+        "proxy_server_request": {
+            "headers": {
+                "X-LLM-Proxy-Client": "codex",
+            }
+        },
+    }
+
+    result = asyncio.run(
+        callback.async_pre_call_hook(data=data, call_type="aresponses")
+    )
+
+    assert result is data
+    assert data["instructions"] == "codex system instructions"
+    assert data["input"] == "codex task"
+    assert "messages" not in data
+
+
 def test_responses_deployment_payload_diagnostic_is_content_free(
     monkeypatch,
 ) -> None:

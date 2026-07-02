@@ -3,7 +3,7 @@ name = "litellm-proxy-headroom"
 version = "0.1.0"
 description = "Minimal LiteLLM proxy setup with ChatGPT provider and library-backed compression."
 readme = "README.md"
-requires-python = ">=3.12,<3.13"
+requires-python = ">=3.14,<3.15"
 dependencies = [
     "alembic>=1.16.0",
     "asyncpg>=0.30.0",
@@ -41,7 +41,7 @@ analytics-postgres = "litellm_proxy_headroom.analytics.adapters.headroom.ccr_bac
 
 [tool.ruff]
 line-length = 88
-target-version = "py312"
+target-version = "py314"
 src = ["src", "tests"]
 
 [tool.ruff.lint]

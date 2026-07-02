@@ -1,20 +1,23 @@
-FROM python:3.12-slim-bookworm
-
-COPY --from=ghcr.io/astral-sh/uv:0.9.11 /uv /uvx /bin/
+# syntax=docker/dockerfile:1.7
+FROM ghcr.io/astral-sh/uv:python3.14-bookworm-slim
 
 ENV PYTHONUNBUFFERED=1 \
-    UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
     PATH="/app/.venv/bin:${PATH}"
 
 WORKDIR /app
 
-COPY pyproject.toml uv.lock README.md ./
+COPY pyproject.toml uv.lock ./
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --no-dev --no-install-project
+
+COPY README.md ./README.md
 COPY src ./src
 COPY config ./config
+COPY alembic.ini ./alembic.ini
+COPY alembic ./alembic
 
-RUN uv sync --frozen --no-dev
-
-EXPOSE 4000
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --no-dev
 
 CMD ["litellm", "--config", "/app/config/litellm.yaml", "--host", "0.0.0.0", "--port", "4000"]

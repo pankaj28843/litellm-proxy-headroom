@@ -18,7 +18,7 @@ from typing import Any
 import asyncpg
 
 DEFAULT_DSN = "postgresql://analytics:analytics@127.0.0.1:55432/analytics"
-DEFAULT_DASHBOARD_URL = "http://127.0.0.1:8010"
+DEFAULT_DASHBOARD_URL = "http://127.0.0.1:28010"
 DEFAULT_CACHED_INPUT_COST_MULTIPLIER = Decimal("0.10")
 
 TIME_BOUNDS_SQL = "select now() as db_now"

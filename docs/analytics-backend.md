@@ -1,11 +1,11 @@
 # Analytics Backend
 
 This backend is the owned ingress for compression analytics. LiteLLM remains
-the OpenAI-compatible control plane on port 4000. A small Headroom library
+the OpenAI-compatible control plane on its configured host port. A small Headroom library
 integration is imported only behind the LiteLLM callback and CCR-compatible
 adapter; the analytics backend owns HTTP ingest, CCR retrieval, MCP, stats,
 metrics, custom dashboard APIs, simulations, and PostgreSQL persistence on
-port 8010.
+the configured backend host port.
 
 There is no Headroom CLI, `headroom proxy`, Headroom MCP container, Headroom
 dashboard, Headroom API service, or Headroom Compose service in this repo. Do
@@ -33,33 +33,28 @@ Run the backend outside Compose when debugging:
 ```bash
 docker compose up -d analytics-db phoenix
 uv run uvicorn litellm_proxy_headroom.analytics.adapters.api.app:create_app \
-  --factory --host 127.0.0.1 --port 8010
+  --factory --host 127.0.0.1 --port 28010
 ```
 
 Health checks:
 
 ```bash
-curl -fsS http://127.0.0.1:8010/health
-curl -fsS http://127.0.0.1:8010/ready
+curl -fsS http://127.0.0.1:28010/health
+curl -fsS http://127.0.0.1:28010/ready
 ```
 
 ## Runtime Topology
 
 ```text
-Open WebUI -> LiteLLM proxy -> compression library callback
-                              -> bounded analytics HTTP buffer
-                              -> analytics backend
-                              -> PostgreSQL
+clients -> LiteLLM proxy -> compression library callback
+                       -> bounded analytics HTTP buffer
+                       -> analytics backend
+                       -> PostgreSQL
 
 Library CompressionStoreBackend -> analytics backend CCR adapter endpoints
 MCP clients                     -> analytics backend /mcp/
 Phoenix                         <- LiteLLM and analytics OTel exporters
 ```
-
-Open WebUI stays on the request path as a client surface, but it does not
-export its own OTel traces in the default Compose stack. Its health checks and
-local sqlite connection spans are operational noise for this repo's Phoenix
-debugging goal.
 
 Core boundaries:
 
@@ -77,7 +72,7 @@ Important local variables:
 | Variable | Purpose |
 |---|---|
 | `ANALYTICS_DATABASE_URL` | SQLAlchemy asyncio URL for the analytics PostgreSQL database. |
-| `ANALYTICS_BACKEND_PORT` | Host port for the backend, default `8010`. |
+| `ANALYTICS_BACKEND_PORT` | Host port for the backend, default `28010`. |
 | `ANALYTICS_CACHED_INPUT_COST_MULTIPLIER` | Billing-equivalent multiplier for provider-reported cached input tokens, default `0.10`. Use this to match current provider pricing without changing stored token rows. OpenAI prompt-cache pricing for current GPT-5.x text classes lists cached input as 10% of uncached input as of 2026-06-23; override this value for other providers, processing tiers, or future pricing changes. |
 | `HEADROOM_ANALYTICS_URL` | Host-side analytics backend URL for scripts and local LiteLLM runs. Compose injects the container URL for LiteLLM. |
 | `HEADROOM_ANALYTICS_TIMEOUT_SECONDS` | Short callback HTTP timeout. Keep this low so analytics does not block model requests. |
@@ -194,8 +189,9 @@ explicit mixed-scope investigation. Large record reads are paginated.
 ## Dashboard
 
 The custom analytics backend owns `/dashboard`. It does not mount, alias, or
-proxy another dashboard. LiteLLM stays on port 4000 and the compression library
-remains an imported callback/CCR dependency in that request path.
+proxy another dashboard. LiteLLM stays on its application port inside Compose
+and the compression library remains an imported callback/CCR dependency in that
+request path.
 
 The dashboard implementation is server-rendered:
 
@@ -321,13 +317,13 @@ Minimum backend evidence:
 
 ```bash
 docker compose ps
-curl -fsS http://127.0.0.1:8010/ready
+curl -fsS http://127.0.0.1:28010/ready
 uv run alembic current
 make analytics-smoke
-curl -fsS http://127.0.0.1:8010/metrics | sed -n '1,40p'
+curl -fsS http://127.0.0.1:28010/metrics | sed -n '1,40p'
 ```
 
-For Phoenix, open <http://127.0.0.1:6006> and inspect the
+For Phoenix, open <http://127.0.0.1:26006> and inspect the
 `litellm-proxy-headroom` project. Record trace names, parent/child
 relationships, timing, service names, and non-sensitive attributes. Do not copy
 prompt, response, original chunk, or compressed chunk content into evidence.

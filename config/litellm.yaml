@@ -35,12 +35,3 @@ litellm_settings:
   callbacks:
     - headroom_litellm_callback.headroom_callback
     - arize_phoenix
-  extra_spend_tag_headers:
-    - x-openwebui-chat-id
-    - x-openwebui-message-id
-general_settings:
-  user_header_mappings:
-    - header_name: X-OpenWebUI-User-Id
-      litellm_user_role: internal_user
-    - header_name: X-OpenWebUI-User-Email
-      litellm_user_role: customer

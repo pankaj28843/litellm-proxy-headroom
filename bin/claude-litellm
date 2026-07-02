@@ -12,16 +12,33 @@ if SRC_ROOT.exists():
     sys.path.insert(0, str(SRC_ROOT))
 
 from litellm_proxy_headroom.agent_cli.managed_home import (  # noqa: E402
+    PREFERENCES_FILE_NAME,
     compression_mode_header_value,
     default_home_path,
     find_real_executable,
     load_dotenv,
+    load_preferences,
     normalize_base_url,
+    option_value,
+    preference_value,
     project_name_from_cwd,
+    sync_native_file,
+    sync_native_state,
     truthy_env,
+    write_preferences,
 )
 
 MANAGED_HOME_NAME = ".claude-headroom"
+LOCAL_BACKUP_TAG = "claude-headroom-local-backup"
+EFFORT_VALUES = {"low", "medium", "high", "xhigh", "max"}
+PERMISSION_MODE_VALUES = {
+    "acceptEdits",
+    "auto",
+    "bypassPermissions",
+    "default",
+    "dontAsk",
+    "plan",
+}
 
 
 def die(message: str, code: int = 1) -> None:
@@ -40,6 +57,20 @@ def default_managed_home() -> Path:
     )
 
 
+def default_native_home() -> Path:
+    return default_home_path(
+        ".claude",
+        fallback=REPO_ROOT / "tmp" / "missing-native-claude-home",
+    )
+
+
+def default_native_config_file() -> Path:
+    return default_home_path(
+        ".claude.json",
+        fallback=REPO_ROOT / "tmp" / "missing-native-claude.json",
+    )
+
+
 def managed_home() -> Path:
     raw = os.environ.get("CLAUDE_LITELLM_HOME") or os.environ.get(
         "CLAUDE_LITELLM_STATE_DIR"
@@ -54,6 +85,30 @@ def has_option(argv: list[str], *names: str) -> bool:
         arg in names or any(arg.startswith(f"{name}=") for name in names)
         for arg in argv
     )
+
+
+def resolve_preference(
+    *,
+    argv: list[str],
+    env_name: str,
+    preference_key: str,
+    option_names: tuple[str, ...],
+    preferences: dict[str, str],
+    dotenv_keys: set[str],
+    default: str = "",
+    allowed_values: set[str] | None = None,
+) -> str:
+    value = preference_value(
+        cli_value=option_value(argv, *option_names),
+        env_name=env_name,
+        preference_key=preference_key,
+        preferences=preferences,
+        dotenv_keys=dotenv_keys,
+        default=default,
+    )
+    if value and allowed_values is not None and value not in allowed_values:
+        die(f"{env_name} must be one of {', '.join(sorted(allowed_values))}.")
+    return value
 
 
 def write_mcp_config(path: Path, *, analytics_mcp_url: str) -> None:
@@ -108,7 +163,44 @@ def real_claude() -> str:
         die("could not find a claude binary on PATH other than this wrapper.", code=127)
 
 
-def default_extra_args(argv: list[str], *, mcp_config: Path) -> list[str]:
+def resolved_preferences(
+    argv: list[str], preferences: dict[str, str], *, dotenv_keys: set[str]
+) -> dict[str, str]:
+    return {
+        **preferences,
+        "model": resolve_preference(
+            argv=argv,
+            env_name="CLAUDE_LITELLM_MODEL",
+            preference_key="model",
+            option_names=("--model",),
+            preferences=preferences,
+            dotenv_keys=dotenv_keys,
+            default="gpt-5.5",
+        ),
+        "effort": resolve_preference(
+            argv=argv,
+            env_name="CLAUDE_LITELLM_EFFORT",
+            preference_key="effort",
+            option_names=("--effort",),
+            preferences=preferences,
+            dotenv_keys=dotenv_keys,
+            allowed_values=EFFORT_VALUES,
+        ),
+        "permission_mode": resolve_preference(
+            argv=argv,
+            env_name="CLAUDE_LITELLM_PERMISSION_MODE",
+            preference_key="permission_mode",
+            option_names=("--permission-mode",),
+            preferences=preferences,
+            dotenv_keys=dotenv_keys,
+            allowed_values=PERMISSION_MODE_VALUES,
+        ),
+    }
+
+
+def default_extra_args(
+    argv: list[str], *, mcp_config: Path | None, preferences: dict[str, str]
+) -> list[str]:
     extra_args: list[str] = []
     if not has_option(argv, "--setting-sources"):
         extra_args.extend(
@@ -117,11 +209,13 @@ def default_extra_args(argv: list[str], *, mcp_config: Path) -> list[str]:
                 os.environ.get("CLAUDE_LITELLM_SETTING_SOURCES", "project"),
             ]
         )
-    if not has_option(argv, "--mcp-config"):
+    if mcp_config is not None and not has_option(argv, "--mcp-config"):
         extra_args.extend(["--mcp-config", str(mcp_config)])
         if truthy_env("CLAUDE_LITELLM_STRICT_MCP", True):
             extra_args.append("--strict-mcp-config")
-    if not has_option(argv, "--allowedTools", "--allowed-tools"):
+    if mcp_config is not None and not has_option(
+        argv, "--allowedTools", "--allowed-tools"
+    ):
         extra_args.extend(
             [
                 "--allowedTools",
@@ -129,18 +223,20 @@ def default_extra_args(argv: list[str], *, mcp_config: Path) -> list[str]:
             ]
         )
     if not has_option(argv, "--model"):
-        extra_args.extend(
-            ["--model", os.environ.get("CLAUDE_LITELLM_MODEL", "gpt-5.5")]
-        )
+        extra_args.extend(["--model", preferences.get("model", "gpt-5.5")])
+    if preferences.get("effort") and not has_option(argv, "--effort"):
+        extra_args.extend(["--effort", preferences["effort"]])
+    if preferences.get("permission_mode") and not has_option(argv, "--permission-mode"):
+        extra_args.extend(["--permission-mode", preferences["permission_mode"]])
     return extra_args
 
 
 def main(argv: list[str]) -> int:
-    load_dotenv(REPO_ROOT / ".env")
+    dotenv_keys = load_dotenv(REPO_ROOT / ".env")
 
     if os.environ.get("LITELLM_MASTER_KEY"):
         os.environ["ANTHROPIC_AUTH_TOKEN"] = os.environ["LITELLM_MASTER_KEY"]
-        os.environ["ANTHROPIC_API_KEY"] = os.environ["LITELLM_MASTER_KEY"]
+        os.environ.pop("ANTHROPIC_API_KEY", None)
     elif needs_api_key(argv):
         die(
             f"LITELLM_MASTER_KEY is not set; add it to {REPO_ROOT / '.env'} or the environment."
@@ -152,10 +248,16 @@ def main(argv: list[str]) -> int:
             env_name="CLAUDE_LITELLM_BASE_URL",
             suffix="",
         )
-        analytics_mcp_url = normalize_base_url(
-            os.environ.get("CLAUDE_LITELLM_ANALYTICS_URL", "http://127.0.0.1:28010"),
-            env_name="CLAUDE_LITELLM_ANALYTICS_URL",
-            suffix="/mcp",
+        analytics_mcp_url = (
+            None
+            if truthy_env("CLAUDE_LITELLM_DISABLE_ANALYTICS_MCP", False)
+            else normalize_base_url(
+                os.environ.get(
+                    "CLAUDE_LITELLM_ANALYTICS_URL", "http://127.0.0.1:28010"
+                ),
+                env_name="CLAUDE_LITELLM_ANALYTICS_URL",
+                suffix="/mcp",
+            )
         )
     except ValueError as exc:
         die(str(exc))
@@ -183,14 +285,56 @@ def main(argv: list[str]) -> int:
     )
 
     home = managed_home()
+    native_home = Path(
+        os.environ.get("CLAUDE_LITELLM_NATIVE_HOME", default_native_home())
+    ).expanduser()
+    native_config_file = Path(
+        os.environ.get(
+            "CLAUDE_LITELLM_NATIVE_CONFIG_FILE", default_native_config_file()
+        )
+    ).expanduser()
     home.mkdir(parents=True, exist_ok=True)
-    mcp_config = home / "mcp.json"
-    write_mcp_config(mcp_config, analytics_mcp_url=analytics_mcp_url)
+    if truthy_env("CLAUDE_LITELLM_LINK_NATIVE_STATE", True):
+        sync_native_state(
+            native_home=native_home,
+            managed_home=home,
+            excluded_names={
+                "cache",
+                "config.json",
+                "mcp.json",
+                "settings.json",
+                "settings.local.json",
+                PREFERENCES_FILE_NAME,
+            },
+            excluded_globs=("settings*.json*", "*.config.*"),
+            backup_tag=LOCAL_BACKUP_TAG,
+        )
+        sync_native_file(
+            native_file=native_config_file,
+            managed_file=home / ".claude.json",
+            backup_tag=LOCAL_BACKUP_TAG,
+        )
+    preferences = resolved_preferences(
+        argv, load_preferences(home), dotenv_keys=dotenv_keys
+    )
+    write_preferences(home, preferences)
+    os.environ["CLAUDE_CONFIG_DIR"] = str(home)
+    if truthy_env("CLAUDE_LITELLM_ISOLATE_HOME", True):
+        os.environ["HOME"] = str(home)
+
+    mcp_config = None
+    if analytics_mcp_url is not None:
+        mcp_config = home / "mcp.json"
+        write_mcp_config(mcp_config, analytics_mcp_url=analytics_mcp_url)
 
     executable = real_claude()
     os.execvpe(
         executable,
-        [executable, *default_extra_args(argv, mcp_config=mcp_config), *argv],
+        [
+            executable,
+            *default_extra_args(argv, mcp_config=mcp_config, preferences=preferences),
+            *argv,
+        ],
         os.environ.copy(),
     )
     return 127

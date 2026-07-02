@@ -14,15 +14,19 @@ if SRC_ROOT.exists():
     sys.path.insert(0, str(SRC_ROOT))
 
 from litellm_proxy_headroom.agent_cli.managed_home import (  # noqa: E402
+    PREFERENCES_FILE_NAME,
     compression_mode_header_value,
     default_home_path,
     find_real_executable,
     load_dotenv,
+    load_preferences,
     normalize_base_url,
+    preference_value,
     project_name_from_cwd,
     render_toml,
     sync_native_state,
     truthy_env,
+    write_preferences,
 )
 
 REASONING_EFFORT_VALUES = {"minimal", "low", "medium", "high", "xhigh"}
@@ -81,7 +85,9 @@ def validate_model(model: str) -> str:
 def load_native_config(path: Path) -> dict[str, object]:
     try:
         data = tomllib.loads(path.read_text(encoding="utf-8"))
-    except (OSError, tomllib.TOMLDecodeError):
+    except OSError:
+        return {}
+    except tomllib.TOMLDecodeError:
         return {}
     return data if isinstance(data, dict) else {}
 
@@ -116,7 +122,9 @@ def litellm_provider(
 def catalog_has_models(path: Path) -> bool:
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+    except OSError:
+        return False
+    except json.JSONDecodeError:
         return False
     return (
         isinstance(data, dict)
@@ -128,38 +136,52 @@ def catalog_has_models(path: Path) -> bool:
 def resolve_model_catalog_json(
     *,
     managed_home: Path,
-    native_home: Path,
 ) -> Path | None:
     override = os.environ.get(MODEL_CATALOG_ENV)
     if override is not None and override.strip():
         path = Path(override).expanduser()
         if not catalog_has_models(path):
-            die(f"{MODEL_CATALOG_ENV} must point to JSON with a non-empty models array.")
+            die(
+                f"{MODEL_CATALOG_ENV} must point to JSON with a non-empty models array."
+            )
         return path.resolve(strict=False)
 
-    for candidate in (
-        managed_home / "models_cache.json",
-        native_home / "models_cache.json",
-    ):
-        if catalog_has_models(candidate):
-            return candidate.resolve(strict=False)
     return None
 
 
-def resolved_model_settings(native_config: dict[str, object]) -> tuple[str, str, str]:
+def resolved_model_settings(
+    native_config: dict[str, object],
+    preferences: dict[str, str],
+    *,
+    dotenv_keys: set[str],
+) -> tuple[str, str, str]:
     native_model = (
         native_config.get("model")
         if isinstance(native_config.get("model"), str)
         else ""
     )
     if not native_model or not MODEL_RE.match(native_model):
-        native_model = "gpt-5.5"
-    model = validate_model(os.environ.get("CODEX_LITELLM_MODEL", native_model))
+        native_model = ""
+    model = validate_model(
+        preference_value(
+            env_name="CODEX_LITELLM_MODEL",
+            preference_key="model",
+            preferences=preferences,
+            dotenv_keys=dotenv_keys,
+            default=native_model or "gpt-5.5",
+        )
+    )
 
     native_effort = native_config.get("model_reasoning_effort")
     if native_effort not in REASONING_EFFORT_VALUES:
         native_effort = ""
-    effort = os.environ.get("CODEX_LITELLM_REASONING_EFFORT", str(native_effort or ""))
+    effort = preference_value(
+        env_name="CODEX_LITELLM_REASONING_EFFORT",
+        preference_key="model_reasoning_effort",
+        preferences=preferences,
+        dotenv_keys=dotenv_keys,
+        default=str(native_effort or ""),
+    )
     if effort not in {"", *REASONING_EFFORT_VALUES}:
         die(
             "CODEX_LITELLM_REASONING_EFFORT must be one of minimal, low, medium, high, or xhigh."
@@ -168,8 +190,12 @@ def resolved_model_settings(native_config: dict[str, object]) -> tuple[str, str,
     native_verbosity = native_config.get("model_verbosity")
     if native_verbosity not in MODEL_VERBOSITY_VALUES:
         native_verbosity = ""
-    verbosity = os.environ.get(
-        "CODEX_LITELLM_MODEL_VERBOSITY", str(native_verbosity or "")
+    verbosity = preference_value(
+        env_name="CODEX_LITELLM_MODEL_VERBOSITY",
+        preference_key="model_verbosity",
+        preferences=preferences,
+        dotenv_keys=dotenv_keys,
+        default=str(native_verbosity or ""),
     )
     if verbosity not in {"", *MODEL_VERBOSITY_VALUES}:
         die("CODEX_LITELLM_MODEL_VERBOSITY must be one of low, medium, or high.")
@@ -182,17 +208,21 @@ def managed_config(
     native_config: dict[str, object],
     inherit_native_config: bool,
     litellm_base_url: str,
-    analytics_mcp_url: str,
+    analytics_mcp_url: str | None,
     compression_mode: str | None,
     responses_provider_passthrough: str | None,
     model_catalog_json: Path | None,
+    preferences: dict[str, str],
+    dotenv_keys: set[str],
 ) -> tuple[dict[str, object], dict[str, object]]:
     data: dict[str, object] = dict(native_config) if inherit_native_config else {}
     for key in SENSITIVE_TOP_LEVEL_KEYS:
         data.pop(key, None)
 
     model, effort, verbosity = resolved_model_settings(
-        native_config if inherit_native_config else {}
+        native_config if inherit_native_config else {},
+        preferences,
+        dotenv_keys=dotenv_keys,
     )
     data["model"] = model
     if effort:
@@ -223,11 +253,16 @@ def managed_config(
     mcp_servers = dict(data.get("mcp_servers") or {})
     mcp_servers.pop("headroom", None)
     mcp_servers.pop("headroom_memory", None)
-    mcp_servers["analytics"] = {
-        "url": analytics_mcp_url,
-        "enabled": True,
-    }
-    data["mcp_servers"] = mcp_servers
+    mcp_servers.pop("analytics", None)
+    if analytics_mcp_url is not None:
+        mcp_servers["analytics"] = {
+            "url": analytics_mcp_url,
+            "enabled": True,
+        }
+    if mcp_servers:
+        data["mcp_servers"] = mcp_servers
+    else:
+        data.pop("mcp_servers", None)
 
     profile = {
         "model": model,
@@ -280,7 +315,7 @@ def parse_profile_arg(argv: list[str]) -> tuple[bool, str]:
 
 def main(argv: list[str]) -> int:
     root = repo_root()
-    load_dotenv(root / ".env")
+    dotenv_keys = load_dotenv(root / ".env")
 
     if os.environ.get("LITELLM_MASTER_KEY"):
         os.environ["OPENAI_API_KEY"] = os.environ["LITELLM_MASTER_KEY"]
@@ -295,10 +330,14 @@ def main(argv: list[str]) -> int:
             env_name="CODEX_LITELLM_BASE_URL",
             suffix="/v1",
         )
-        analytics_mcp_url = normalize_base_url(
-            os.environ.get("CODEX_LITELLM_ANALYTICS_URL", "http://127.0.0.1:28010"),
-            env_name="CODEX_LITELLM_ANALYTICS_URL",
-            suffix="/mcp",
+        analytics_mcp_url = (
+            None
+            if truthy_env("CODEX_LITELLM_DISABLE_ANALYTICS_MCP", False)
+            else normalize_base_url(
+                os.environ.get("CODEX_LITELLM_ANALYTICS_URL", "http://127.0.0.1:28010"),
+                env_name="CODEX_LITELLM_ANALYTICS_URL",
+                suffix="/mcp",
+            )
         )
     except ValueError as exc:
         die(str(exc))
@@ -360,17 +399,17 @@ def main(argv: list[str]) -> int:
             f"({native_home}); choose a managed directory or set CODEX_LITELLM_ALLOW_SHARED_HOME=1."
         )
     managed_home.mkdir(parents=True, exist_ok=True)
+    preferences = load_preferences(managed_home)
 
     native_config_path = Path(
         os.environ.get("CODEX_LITELLM_NATIVE_CONFIG", native_home / "config.toml")
     ).expanduser()
-    inherit_native_config = truthy_env("CODEX_LITELLM_INHERIT_NATIVE_CONFIG", True)
+    inherit_native_config = truthy_env("CODEX_LITELLM_INHERIT_NATIVE_CONFIG", False)
     native_config = (
         load_native_config(native_config_path) if inherit_native_config else {}
     )
     model_catalog_json = resolve_model_catalog_json(
         managed_home=managed_home,
-        native_home=native_home,
     )
     base_config, profile_config = managed_config(
         native_config=native_config,
@@ -380,6 +419,8 @@ def main(argv: list[str]) -> int:
         compression_mode=compression_mode,
         responses_provider_passthrough=responses_provider_passthrough,
         model_catalog_json=model_catalog_json,
+        preferences=preferences,
+        dotenv_keys=dotenv_keys,
     )
     (managed_home / "config.toml").write_text(
         render_toml(base_config, header=TOML_HEADER),
@@ -389,12 +430,29 @@ def main(argv: list[str]) -> int:
         render_toml(profile_config, header=TOML_HEADER),
         encoding="utf-8",
     )
+    write_preferences(
+        managed_home,
+        {
+            **preferences,
+            "model": str(profile_config["model"]),
+            "model_reasoning_effort": str(
+                profile_config.get("model_reasoning_effort", "")
+            ),
+            "model_verbosity": str(profile_config.get("model_verbosity", "")),
+        },
+    )
 
     if truthy_env("CODEX_LITELLM_LINK_NATIVE_STATE", True):
         sync_native_state(
             native_home=native_home,
             managed_home=managed_home,
-            excluded_names={"config.toml", f"{PROFILE_NAME}.config.toml"},
+            excluded_names={
+                "config.toml",
+                f"{PROFILE_NAME}.config.toml",
+                "models_cache.json",
+                PREFERENCES_FILE_NAME,
+            },
+            excluded_globs=("*.config.toml", "settings*.toml", "settings*.json"),
             backup_tag=LOCAL_BACKUP_TAG,
         )
 

@@ -5,6 +5,35 @@ import tomllib
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+WRAPPER_TEST_ENV_PREFIXES = (
+    "CODEX_LITELLM_",
+    "CLAUDE_LITELLM_",
+    "OPENCODE_LITELLM_",
+    "COPILOT_LITELLM_",
+    "PI_LITELLM_",
+    "COPILOT_PROVIDER_",
+)
+WRAPPER_TEST_ENV_NAMES = {
+    "ANTHROPIC_API_KEY",
+    "ANTHROPIC_AUTH_TOKEN",
+    "ANTHROPIC_BASE_URL",
+    "ANTHROPIC_CUSTOM_HEADERS",
+    "CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY",
+    "CLAUDE_CONFIG_DIR",
+    "CODEX_HOME",
+    "COPILOT_AGENT_REQUEST_HEADERS",
+    "COPILOT_AUTO_UPDATE",
+    "COPILOT_HOME",
+    "COPILOT_MODEL",
+    "OPENAI_API_KEY",
+    "OPENAI_BASE_URL",
+    "OPENCODE_CONFIG",
+    "OPENCODE_CONFIG_DIR",
+    "PI_CODING_AGENT_DIR",
+    "XDG_CACHE_HOME",
+    "XDG_CONFIG_HOME",
+    "XDG_DATA_HOME",
+}
 
 
 def _write_fake_cli(path: Path) -> None:
@@ -18,6 +47,7 @@ import sys
 from pathlib import Path
 
 capture = {
+    "home": os.environ.get("HOME"),
     "args": sys.argv[1:],
     "codex_home": os.environ.get("CODEX_HOME"),
     "codex_litellm_client": os.environ.get("CODEX_LITELLM_CLIENT"),
@@ -32,6 +62,7 @@ capture = {
     "openai_base_url": os.environ.get("OPENAI_BASE_URL"),
     "anthropic_base_url": os.environ.get("ANTHROPIC_BASE_URL"),
     "anthropic_custom_headers": os.environ.get("ANTHROPIC_CUSTOM_HEADERS"),
+    "claude_config_dir": os.environ.get("CLAUDE_CONFIG_DIR"),
     "claude_litellm_compression_mode": os.environ.get("CLAUDE_LITELLM_COMPRESSION_MODE"),
     "anthropic_auth_token_present": bool(os.environ.get("ANTHROPIC_AUTH_TOKEN")),
     "anthropic_api_key_present": bool(os.environ.get("ANTHROPIC_API_KEY")),
@@ -57,6 +88,10 @@ capture = {
     "copilot_provider_max_output_tokens": os.environ.get(
         "COPILOT_PROVIDER_MAX_OUTPUT_TOKENS"
     ),
+    "copilot_agent_request_headers": os.environ.get("COPILOT_AGENT_REQUEST_HEADERS"),
+    "copilot_litellm_compression_mode": os.environ.get(
+        "COPILOT_LITELLM_COMPRESSION_MODE"
+    ),
     "pi_coding_agent_dir": os.environ.get("PI_CODING_AGENT_DIR"),
     "pi_litellm_client": os.environ.get("PI_LITELLM_CLIENT"),
     "pi_litellm_project": os.environ.get("PI_LITELLM_PROJECT"),
@@ -75,13 +110,20 @@ PY
 
 def _base_env(fake_bin: Path, capture_path: Path) -> dict[str, str]:
     env = os.environ.copy()
+    for key in list(env):
+        if key in WRAPPER_TEST_ENV_NAMES or key.startswith(WRAPPER_TEST_ENV_PREFIXES):
+            env.pop(key, None)
     env.update(
         {
             "PATH": f"{fake_bin}{os.pathsep}{env.get('PATH', '')}",
             "FAKE_CLI_CAPTURE": str(capture_path),
             "CODEX_LITELLM_INHERIT_NATIVE_CONFIG": "0",
             "CODEX_LITELLM_LINK_NATIVE_STATE": "0",
+            "CLAUDE_LITELLM_LINK_NATIVE_STATE": "0",
+            "COPILOT_LITELLM_LINK_NATIVE_STATE": "0",
             "LITELLM_MASTER_KEY": "sk-test-wrapper-key",
+            "OPENCODE_LITELLM_LINK_NATIVE_STATE": "0",
+            "PI_LITELLM_LINK_NATIVE_STATE": "0",
         }
     )
     return env
@@ -152,7 +194,7 @@ def test_codex_wrapper_generates_responses_provider_config(tmp_path: Path) -> No
     profile_config = tomllib.loads((codex_home / "litellm.config.toml").read_text())
 
     assert base_config["mcp_servers"]["analytics"]["url"] == (
-        "http://127.0.0.1:28010/mcp/"
+        "http://10.20.30.1:28010/mcp/"
     )
     assert set(base_config["mcp_servers"]) == {"analytics"}
     assert "headroom" not in base_config["mcp_servers"]
@@ -177,6 +219,49 @@ def test_codex_wrapper_generates_responses_provider_config(tmp_path: Path) -> No
     }
     assert "sk-test-wrapper-key" not in (codex_home / "config.toml").read_text()
     assert "sk-test-wrapper-key" not in (codex_home / "litellm.config.toml").read_text()
+
+
+def test_codex_wrapper_persists_managed_model_preferences(tmp_path: Path) -> None:
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    _write_fake_cli(fake_bin / "codex")
+    capture_path = tmp_path / "capture.json"
+    codex_home = tmp_path / "codex-home"
+
+    env = _base_env(fake_bin, capture_path)
+    env["CODEX_LITELLM_HOME"] = str(codex_home)
+    env["CODEX_LITELLM_MODEL"] = "gpt-5.4-mini"
+    env["CODEX_LITELLM_REASONING_EFFORT"] = "low"
+    env["CODEX_LITELLM_MODEL_VERBOSITY"] = "high"
+
+    subprocess.run(
+        [str(REPO_ROOT / "bin/codex-litellm"), "exec", "first"],
+        check=True,
+        cwd=REPO_ROOT,
+        env=env,
+    )
+
+    env.pop("CODEX_LITELLM_MODEL")
+    env.pop("CODEX_LITELLM_REASONING_EFFORT")
+    env.pop("CODEX_LITELLM_MODEL_VERBOSITY")
+    subprocess.run(
+        [str(REPO_ROOT / "bin/codex-litellm"), "exec", "second"],
+        check=True,
+        cwd=REPO_ROOT,
+        env=env,
+    )
+
+    profile_config = tomllib.loads((codex_home / "litellm.config.toml").read_text())
+    preferences = json.loads((codex_home / "litellm-preferences.json").read_text())
+
+    assert profile_config["model"] == "gpt-5.4-mini"
+    assert profile_config["model_reasoning_effort"] == "low"
+    assert profile_config["model_verbosity"] == "high"
+    assert preferences == {
+        "model": "gpt-5.4-mini",
+        "model_reasoning_effort": "low",
+        "model_verbosity": "high",
+    }
 
 
 def test_codex_wrapper_can_send_provider_passthrough_experiment_header(
@@ -204,9 +289,10 @@ def test_codex_wrapper_can_send_provider_passthrough_experiment_header(
     provider = profile_config["model_providers"]["litellm"]
 
     assert capture["codex_litellm_responses_provider_passthrough"] == "off"
-    assert provider["env_http_headers"][
-        "X-LLM-Proxy-Responses-Provider-Passthrough"
-    ] == "CODEX_LITELLM_RESPONSES_PROVIDER_PASSTHROUGH"
+    assert (
+        provider["env_http_headers"]["X-LLM-Proxy-Responses-Provider-Passthrough"]
+        == "CODEX_LITELLM_RESPONSES_PROVIDER_PASSTHROUGH"
+    )
 
 
 def test_codex_wrapper_uses_configured_litellm_base_url(tmp_path: Path) -> None:
@@ -283,6 +369,30 @@ def test_codex_wrapper_uses_configured_analytics_mcp_url(tmp_path: Path) -> None
     assert base_config["mcp_servers"]["analytics"]["url"] == (
         "http://127.0.0.1:8110/mcp/"
     )
+
+
+def test_codex_wrapper_can_disable_analytics_mcp(tmp_path: Path) -> None:
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    _write_fake_cli(fake_bin / "codex")
+    capture_path = tmp_path / "capture.json"
+    codex_home = tmp_path / "codex-home"
+
+    env = _base_env(fake_bin, capture_path)
+    env["CODEX_LITELLM_HOME"] = str(codex_home)
+    env["CODEX_LITELLM_DISABLE_ANALYTICS_MCP"] = "1"
+    env["CODEX_LITELLM_ANALYTICS_URL"] = "http://user:secret@127.0.0.1:8110"
+
+    subprocess.run(
+        [str(REPO_ROOT / "bin/codex-litellm"), "exec", "health marker"],
+        check=True,
+        cwd=REPO_ROOT,
+        env=env,
+    )
+
+    base_config = tomllib.loads((codex_home / "config.toml").read_text())
+
+    assert "mcp_servers" not in base_config
 
 
 def test_codex_wrapper_inherits_safe_native_config_for_parity(tmp_path: Path) -> None:
@@ -383,7 +493,7 @@ requires_openai_auth = true
     assert "must-not-copy" not in profile_config_text
 
 
-def test_codex_wrapper_pins_existing_model_catalog_cache(tmp_path: Path) -> None:
+def test_codex_wrapper_excludes_native_model_catalog_cache(tmp_path: Path) -> None:
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
     _write_fake_cli(fake_bin / "codex")
@@ -408,8 +518,9 @@ def test_codex_wrapper_pins_existing_model_catalog_cache(tmp_path: Path) -> None
     base_config = tomllib.loads((codex_home / "config.toml").read_text())
     profile_config = tomllib.loads((codex_home / "litellm.config.toml").read_text())
 
-    assert base_config["model_catalog_json"] == str(native_cache)
-    assert profile_config["model_catalog_json"] == str(native_cache)
+    assert "model_catalog_json" not in base_config
+    assert "model_catalog_json" not in profile_config
+    assert not (codex_home / "models_cache.json").exists()
 
 
 def test_codex_wrapper_rejects_empty_model_catalog_override(tmp_path: Path) -> None:
@@ -789,7 +900,9 @@ def test_claude_wrapper_generates_mcp_config_and_gateway_env(tmp_path: Path) -> 
     capture = json.loads(capture_path.read_text())
     assert capture["anthropic_base_url"] == "http://10.20.30.1:24040"
     assert capture["anthropic_auth_token_present"] is True
-    assert capture["anthropic_api_key_present"] is True
+    assert capture["anthropic_api_key_present"] is False
+    assert capture["claude_config_dir"] == str(state_dir)
+    assert capture["home"] == str(state_dir)
     assert capture["anthropic_custom_headers"] == "\n".join(
         [
             "X-LLM-Proxy-Client: claude",
@@ -816,11 +929,102 @@ def test_claude_wrapper_generates_mcp_config_and_gateway_env(tmp_path: Path) -> 
         "mcpServers": {
             "analytics": {
                 "type": "http",
-                "url": "http://127.0.0.1:28010/mcp/",
+                "url": "http://10.20.30.1:28010/mcp/",
             }
         }
     }
     assert "sk-test-wrapper-key" not in (state_dir / "mcp.json").read_text()
+
+
+def test_claude_wrapper_persists_managed_preferences_and_links_native_state(
+    tmp_path: Path,
+) -> None:
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    _write_fake_cli(fake_bin / "claude")
+    capture_path = tmp_path / "capture.json"
+    state_dir = tmp_path / "claude-state"
+    native_config = tmp_path / ".claude.json"
+    native_state = tmp_path / ".claude"
+    native_state.mkdir()
+    native_auth = native_state / ".credentials.json"
+    native_auth.write_text('{"native":true}')
+    native_sessions = native_state / "sessions"
+    native_sessions.mkdir()
+    (native_sessions / "session.jsonl").write_text("{}\n")
+    (native_state / "cache").mkdir()
+    (native_state / "cache" / "gateway-models.json").write_text(
+        '{"baseUrl":"http://10.20.30.1:11435"}'
+    )
+    (native_state / "settings.json").write_text(
+        '{"env":{"ANTHROPIC_BASE_URL":"http://10.20.30.1:11435"}}'
+    )
+    native_config.write_text('{"topLevel":true}')
+
+    env = _base_env(fake_bin, capture_path)
+    env["HOME"] = str(tmp_path)
+    env["CLAUDE_LITELLM_STATE_DIR"] = str(state_dir)
+    env.pop("CLAUDE_LITELLM_LINK_NATIVE_STATE", None)
+
+    subprocess.run(
+        [
+            str(REPO_ROOT / "bin/claude-litellm"),
+            "--model",
+            "gpt-5.4-mini",
+            "--effort",
+            "high",
+            "--permission-mode",
+            "dontAsk",
+            "--print",
+            "first",
+        ],
+        check=True,
+        cwd=REPO_ROOT,
+        env=env,
+    )
+
+    subprocess.run(
+        [str(REPO_ROOT / "bin/claude-litellm"), "--print", "second"],
+        check=True,
+        cwd=REPO_ROOT,
+        env=env,
+    )
+
+    capture = json.loads(capture_path.read_text())
+    preferences = json.loads((state_dir / "litellm-preferences.json").read_text())
+
+    assert capture["args"] == [
+        "--setting-sources",
+        "project",
+        "--mcp-config",
+        str(state_dir / "mcp.json"),
+        "--strict-mcp-config",
+        "--allowedTools",
+        "mcp__analytics__*",
+        "--model",
+        "gpt-5.4-mini",
+        "--effort",
+        "high",
+        "--permission-mode",
+        "dontAsk",
+        "--print",
+        "second",
+    ]
+    assert preferences == {
+        "effort": "high",
+        "model": "gpt-5.4-mini",
+        "permission_mode": "dontAsk",
+    }
+    assert capture["claude_config_dir"] == str(state_dir)
+    assert capture["home"] == str(state_dir)
+    assert (state_dir / ".claude.json").is_symlink()
+    assert (state_dir / ".claude.json").resolve() == native_config
+    assert (state_dir / ".credentials.json").is_symlink()
+    assert (state_dir / ".credentials.json").resolve() == native_auth
+    assert (state_dir / "sessions").is_symlink()
+    assert (state_dir / "sessions").resolve() == native_sessions
+    assert not (state_dir / "settings.json").exists()
+    assert not (state_dir / "cache").exists()
 
 
 def test_claude_wrapper_preserves_existing_custom_headers_and_adds_run_marker(
@@ -858,6 +1062,32 @@ def test_claude_wrapper_preserves_existing_custom_headers_and_adds_run_marker(
         ]
     )
     assert capture["claude_litellm_compression_mode"] == "off"
+
+
+def test_claude_wrapper_can_disable_analytics_mcp(tmp_path: Path) -> None:
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    _write_fake_cli(fake_bin / "claude")
+    capture_path = tmp_path / "capture.json"
+    state_dir = tmp_path / "claude-state"
+
+    env = _base_env(fake_bin, capture_path)
+    env["CLAUDE_LITELLM_STATE_DIR"] = str(state_dir)
+    env["CLAUDE_LITELLM_DISABLE_ANALYTICS_MCP"] = "true"
+    env["CLAUDE_LITELLM_ANALYTICS_URL"] = "http://user:secret@127.0.0.1:8110"
+
+    subprocess.run(
+        [str(REPO_ROOT / "bin/claude-litellm"), "--print", "health marker"],
+        check=True,
+        cwd=REPO_ROOT,
+        env=env,
+    )
+
+    capture = json.loads(capture_path.read_text())
+    assert "--mcp-config" not in capture["args"]
+    assert "--strict-mcp-config" not in capture["args"]
+    assert "--allowedTools" not in capture["args"]
+    assert not (state_dir / "mcp.json").exists()
 
 
 def test_claude_wrapper_defaults_to_managed_home(tmp_path: Path) -> None:
@@ -968,11 +1198,55 @@ def test_opencode_wrapper_generates_managed_config_and_env(tmp_path: Path) -> No
     }
     assert config["mcp"]["analytics"] == {
         "type": "remote",
-        "url": "http://127.0.0.1:28010/mcp/",
+        "url": "http://10.20.30.1:28010/mcp/",
         "enabled": True,
         "oauth": False,
     }
     assert "sk-test-wrapper-key" not in config_path.read_text()
+
+
+def test_opencode_wrapper_persists_managed_model_preferences(tmp_path: Path) -> None:
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    _write_fake_cli(fake_bin / "opencode")
+    capture_path = tmp_path / "capture.json"
+    managed_home = tmp_path / "opencode-home"
+
+    env = _base_env(fake_bin, capture_path)
+    env["OPENCODE_LITELLM_HOME"] = str(managed_home)
+
+    subprocess.run(
+        [
+            str(REPO_ROOT / "bin/opencode-litellm"),
+            "--model",
+            "litellm/gpt-5.4-mini",
+            "run",
+            "first",
+        ],
+        check=True,
+        cwd=REPO_ROOT,
+        env=env,
+    )
+
+    subprocess.run(
+        [str(REPO_ROOT / "bin/opencode-litellm"), "run", "second"],
+        check=True,
+        cwd=REPO_ROOT,
+        env=env,
+    )
+
+    capture = json.loads(capture_path.read_text())
+    config = json.loads((managed_home / "opencode.json").read_text())
+    preferences = json.loads((managed_home / "litellm-preferences.json").read_text())
+
+    assert capture["args"] == [
+        "--model",
+        "litellm/gpt-5.4-mini",
+        "run",
+        "second",
+    ]
+    assert config["model"] == "litellm/gpt-5.4-mini"
+    assert preferences["model"] == "gpt-5.4-mini"
 
 
 def test_opencode_wrapper_respects_existing_model_argument(tmp_path: Path) -> None:
@@ -1011,6 +1285,30 @@ def test_opencode_wrapper_respects_existing_model_argument(tmp_path: Path) -> No
         "X-LLM-Proxy-Compression"
         not in config["provider"]["litellm"]["options"]["headers"]
     )
+
+
+def test_opencode_wrapper_can_disable_analytics_mcp(tmp_path: Path) -> None:
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    _write_fake_cli(fake_bin / "opencode")
+    capture_path = tmp_path / "capture.json"
+    managed_home = tmp_path / "opencode-home"
+
+    env = _base_env(fake_bin, capture_path)
+    env["OPENCODE_LITELLM_HOME"] = str(managed_home)
+    env["OPENCODE_LITELLM_DISABLE_ANALYTICS_MCP"] = "yes"
+    env["OPENCODE_LITELLM_ANALYTICS_URL"] = "http://user:secret@127.0.0.1:8110"
+
+    subprocess.run(
+        [str(REPO_ROOT / "bin/opencode-litellm"), "run", "health marker"],
+        check=True,
+        cwd=REPO_ROOT,
+        env=env,
+    )
+
+    config = json.loads((managed_home / "opencode.json").read_text())
+
+    assert "mcp" not in config
 
 
 def test_opencode_wrapper_does_not_add_model_to_management_commands(
@@ -1132,6 +1430,52 @@ def test_pi_wrapper_generates_managed_models_config_and_env(tmp_path: Path) -> N
         "X-LLM-Proxy-Compression": "$PI_LITELLM_COMPRESSION_MODE",
     }
     assert "sk-test-wrapper-key" not in models_path.read_text()
+
+
+def test_pi_wrapper_persists_managed_model_preferences(tmp_path: Path) -> None:
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    _write_fake_cli(fake_bin / "pi")
+    capture_path = tmp_path / "capture.json"
+    managed_home = tmp_path / "pi-home"
+
+    env = _base_env(fake_bin, capture_path)
+    env["PI_LITELLM_HOME"] = str(managed_home)
+
+    subprocess.run(
+        [
+            str(REPO_ROOT / "bin/pi-litellm"),
+            "--model",
+            "litellm/gpt-5.4-mini",
+            "-p",
+            "first",
+        ],
+        check=True,
+        cwd=REPO_ROOT,
+        env=env,
+    )
+
+    subprocess.run(
+        [str(REPO_ROOT / "bin/pi-litellm"), "-p", "second"],
+        check=True,
+        cwd=REPO_ROOT,
+        env=env,
+    )
+
+    capture = json.loads(capture_path.read_text())
+    config = json.loads((managed_home / "models.json").read_text())
+    preferences = json.loads((managed_home / "litellm-preferences.json").read_text())
+
+    assert capture["args"] == [
+        "--provider",
+        "litellm",
+        "--model",
+        "gpt-5.4-mini",
+        "-p",
+        "second",
+    ]
+    assert config["providers"]["litellm"]["models"][0]["id"] == "gpt-5.4-mini"
+    assert preferences["model"] == "gpt-5.4-mini"
 
 
 def test_pi_wrapper_respects_existing_model_argument(tmp_path: Path) -> None:
@@ -1303,6 +1647,11 @@ def test_copilot_wrapper_uses_configured_litellm_provider(tmp_path: Path) -> Non
     env["COPILOT_LITELLM_WIRE_API"] = "responses"
     env["COPILOT_LITELLM_MAX_PROMPT_TOKENS"] = "180000"
     env["COPILOT_LITELLM_MAX_OUTPUT_TOKENS"] = "64000"
+    env["COPILOT_LITELLM_CLIENT"] = "copilot-smoke"
+    env["COPILOT_LITELLM_PROJECT"] = "project\none"
+    env["COPILOT_LITELLM_COMPRESSION_MODE"] = "disabled"
+    env["COPILOT_AGENT_REQUEST_HEADERS"] = json.dumps({"x-existing": "value"})
+    env["LITELLM_PROXY_RUN_MARKER"] = "COPILOT-RUN-1"
 
     subprocess.run(
         [str(REPO_ROOT / "bin/copilot-litellm"), "--version"],
@@ -1320,6 +1669,60 @@ def test_copilot_wrapper_uses_configured_litellm_provider(tmp_path: Path) -> Non
     assert capture["copilot_provider_wire_api"] == "responses"
     assert capture["copilot_provider_max_prompt_tokens"] == "180000"
     assert capture["copilot_provider_max_output_tokens"] == "64000"
+    assert capture["copilot_litellm_compression_mode"] == "off"
+    assert json.loads(capture["copilot_agent_request_headers"]) == {
+        "X-LLM-Proxy-Client": "copilot-smoke",
+        "X-LLM-Proxy-Compression": "off",
+        "X-LLM-Proxy-Project": "project one",
+        "X-LLM-Proxy-Run": "COPILOT-RUN-1",
+        "x-existing": "value",
+    }
+
+
+def test_copilot_wrapper_persists_managed_provider_preferences(
+    tmp_path: Path,
+) -> None:
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    _write_fake_cli(fake_bin / "copilot")
+    capture_path = tmp_path / "capture.json"
+    managed_home = tmp_path / ".copilot-headroom"
+
+    env = _base_env(fake_bin, capture_path)
+    env["HOME"] = str(tmp_path)
+    env["COPILOT_LITELLM_HOME"] = str(managed_home)
+    env["COPILOT_LITELLM_MODEL"] = "gpt-5.4-mini"
+    env["COPILOT_LITELLM_PROVIDER_MODEL_ID"] = "gpt-5.4"
+    env["COPILOT_LITELLM_WIRE_MODEL"] = "gpt-5.4-mini"
+    env["COPILOT_LITELLM_MAX_PROMPT_TOKENS"] = "180000"
+
+    subprocess.run(
+        [str(REPO_ROOT / "bin/copilot-litellm"), "-p", "first"],
+        check=True,
+        cwd=REPO_ROOT,
+        env=env,
+    )
+
+    env.pop("COPILOT_LITELLM_MODEL")
+    env.pop("COPILOT_LITELLM_PROVIDER_MODEL_ID")
+    env.pop("COPILOT_LITELLM_WIRE_MODEL")
+    env.pop("COPILOT_LITELLM_MAX_PROMPT_TOKENS")
+    subprocess.run(
+        [str(REPO_ROOT / "bin/copilot-litellm"), "-p", "second"],
+        check=True,
+        cwd=REPO_ROOT,
+        env=env,
+    )
+
+    capture = json.loads(capture_path.read_text())
+    preferences = json.loads((managed_home / "litellm-preferences.json").read_text())
+
+    assert capture["args"] == ["--model", "gpt-4.1", "--yolo", "-p", "second"]
+    assert capture["copilot_provider_model_id"] == "gpt-5.4"
+    assert capture["copilot_provider_wire_model"] == "gpt-5.4-mini"
+    assert capture["copilot_provider_max_prompt_tokens"] == "180000"
+    assert preferences["wire_model"] == "gpt-5.4-mini"
+    assert preferences["provider_model_id"] == "gpt-5.4"
 
 
 def test_copilot_wrapper_owns_provider_env_over_shell_defaults(
@@ -1373,7 +1776,7 @@ def test_copilot_wrapper_adds_cli_model_for_provider_calls(tmp_path: Path) -> No
     )
 
     capture = json.loads(capture_path.read_text())
-    assert capture["args"] == ["--model", "gpt-4.1", "-p", "health marker"]
+    assert capture["args"] == ["--model", "gpt-4.1", "--yolo", "-p", "health marker"]
     assert capture["copilot_model"] == "gpt-4.1"
     assert capture["copilot_provider_model_id"] == "gpt-5.4-mini"
     assert capture["copilot_provider_wire_model"] == "gpt-5.4-mini"
@@ -1402,7 +1805,32 @@ def test_copilot_wrapper_preserves_explicit_cli_model(tmp_path: Path) -> None:
     )
 
     capture = json.loads(capture_path.read_text())
-    assert capture["args"] == ["--model", "gpt-5-mini", "-p", "health marker"]
+    assert capture["args"] == ["--yolo", "--model", "gpt-5-mini", "-p", "health marker"]
+
+
+def test_copilot_wrapper_does_not_duplicate_yolo_arg(tmp_path: Path) -> None:
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    _write_fake_cli(fake_bin / "copilot")
+    capture_path = tmp_path / "capture.json"
+
+    env = _base_env(fake_bin, capture_path)
+    env["HOME"] = str(tmp_path)
+
+    subprocess.run(
+        [
+            str(REPO_ROOT / "bin/copilot-litellm"),
+            "--yolo",
+            "-p",
+            "health marker",
+        ],
+        check=True,
+        cwd=REPO_ROOT,
+        env=env,
+    )
+
+    capture = json.loads(capture_path.read_text())
+    assert capture["args"] == ["--model", "gpt-4.1", "--yolo", "-p", "health marker"]
 
 
 def test_copilot_wrapper_rejects_litellm_base_url_with_credentials(

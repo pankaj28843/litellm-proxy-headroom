@@ -101,7 +101,7 @@ uv run python scripts/e2e_dashboard_stats_smoke.py
 The analytics dashboard is served by the custom backend at:
 
 ```text
-http://127.0.0.1:28010/dashboard
+http://10.20.30.1:28010/dashboard
 ```
 
 It is a server-rendered Jinja/HTMX dashboard backed by the same PostgreSQL
@@ -251,8 +251,9 @@ directories, builds the shared Python image, and starts:
 - Phoenix: <http://127.0.0.1:26006>
 - Phoenix PostgreSQL on the private Compose network
 - Analytics PostgreSQL: `127.0.0.1:${ANALYTICS_POSTGRES_PORT:-55432}`
-- Analytics backend: <http://127.0.0.1:28010>
-- Analytics MCP: <http://127.0.0.1:28010/mcp/>
+- Analytics backend: <http://10.20.30.1:28010>
+- Analytics dashboard: <http://10.20.30.1:28010/dashboard>
+- Analytics MCP: <http://10.20.30.1:28010/mcp/>
 
 Useful targets:
 
@@ -291,7 +292,13 @@ Use the repo-owned wrappers when running agent CLIs through this LiteLLM stack:
 ```
 
 These wrappers read `.env`, do not print secret values, and generate non-secret
-runtime config in managed local state. To put them on your PATH without changing
+runtime config in managed local state. Each wrapper also keeps wrapper-specific
+preferences in `litellm-preferences.json` under its managed home, so explicit
+model, reasoning/effort, permission, and provider-wire choices survive future
+runs. The managed homes keep wrapper-owned files real and symlink compatible
+native state such as auth/session files around them where the CLI supports that,
+while excluding native settings, generated config, and route caches that could
+override the LiteLLM endpoint. To put wrappers on your PATH without changing
 global agent config, symlink the wrapper names:
 
 ```bash
@@ -301,6 +308,18 @@ ln -sf "$PWD/bin/opencode-litellm" "$HOME/.local/bin/opencode-litellm"
 ln -sf "$PWD/bin/copilot-litellm" "$HOME/.local/bin/copilot-litellm"
 ln -sf "$PWD/bin/pi-litellm" "$HOME/.local/bin/pi-litellm"
 ```
+
+For sibling VMs, install a copied wrapper tree plus launchers instead of
+symlinks:
+
+```bash
+LITELLM_MASTER_KEY=... python3 scripts/install_remote_wrappers.py
+```
+
+The installer defaults launchers to `http://10.20.30.1:24040`, disables
+analytics MCP config for remote wrappers, and sets `*_LITELLM_COMPRESSION_MODE=off`.
+It writes the key only into the target user's `~/.local/bin/*-litellm` launchers;
+do not commit generated launchers.
 
 Current support levels are maintained in
 [docs/agent-cli-support.md](docs/agent-cli-support.md), and the shared
@@ -353,9 +372,13 @@ first-party Codex account snapshots remain the quota proof.
 
 `bin/codex-litellm` sets `CODEX_HOME` to the managed `~/.codex-headroom`
 directory, writes `config.toml` and `litellm.config.toml`, symlinks native
-Codex state such as `sessions` and `auth.json` from `~/.codex`, configures the
-LiteLLM Responses provider at `http://10.20.30.1:24040/v1`, and adds the
-analytics MCP endpoint for local compression-marker retrieval. The wrapper refuses
+Codex state such as `sessions` and `auth.json` from `~/.codex` while excluding
+native config/settings and generated model caches, configures the LiteLLM
+Responses provider at
+`http://10.20.30.1:24040/v1`, and adds the analytics MCP endpoint for local
+compression-marker retrieval. Native Codex `config.toml` inheritance is off by
+default; set `CODEX_LITELLM_INHERIT_NATIVE_CONFIG=1` only for deliberate
+diagnostics/parity checks. The wrapper refuses
 `CODEX_LITELLM_HOME=$HOME/.codex` by default because it does not own Headroom's
 snapshot/unwrap machinery for mutating a user's native Codex config; choose an
 isolated directory instead. It also maps `CODEX_LITELLM_PROJECT` to
@@ -370,40 +393,52 @@ because they can bypass the generated LiteLLM provider; omit `--profile`, use
 `http://10.20.30.1:24040`; the wrapper normalizes it to the `/v1` OpenAI-compatible
 base URL used by both `OPENAI_BASE_URL` and the generated Codex provider. Set
 `CODEX_LITELLM_ANALYTICS_URL` when the analytics backend is not on
-`http://127.0.0.1:28010`; the wrapper normalizes it to the local analytics
-`/mcp/` endpoint. Set `CODEX_LITELLM_REASONING_EFFORT` to `minimal`, `low`,
-`medium`, `high`, or `xhigh` when the isolated profile should pin Codex
+`http://10.20.30.1:28010`; the wrapper normalizes it to the local analytics
+`/mcp/` endpoint. Set `CODEX_LITELLM_DISABLE_ANALYTICS_MCP=1` for remote
+wrapper installs that should talk only to LiteLLM. Set
+`CODEX_LITELLM_REASONING_EFFORT` to `minimal`, `low`, `medium`, `high`, or
+`xhigh` when the isolated profile should pin Codex
 `model_reasoning_effort`. Set `CODEX_LITELLM_MODEL_VERBOSITY` to `low`,
 `medium`, or `high` when the isolated profile should pin Codex
-`model_verbosity`.
+`model_verbosity`. The resolved model, reasoning effort, and verbosity are
+persisted under `~/.codex-headroom/litellm-preferences.json`.
 
 `bin/pi-litellm` sets `PI_CODING_AGENT_DIR` to managed `~/.pi-headroom`, writes
 `models.json` with a custom `litellm` provider using the OpenAI Responses API,
 and maps `PI_LITELLM_MODEL` plus `PI_LITELLM_SMALL_MODEL` to generated model
 entries. The generated config references `LITELLM_MASTER_KEY` as an environment
 variable and sends local `X-LLM-Proxy-*` attribution headers through Pi's
-documented custom-provider header config. The wrapper defaults to `gpt-5.5`;
-use `PI_LITELLM_MODEL=gpt-5.4-mini` only for smoke routing. Latest Pi
+documented custom-provider header config. It symlinks native Pi state except
+settings/config and generated `models.json`. The wrapper defaults to `gpt-5.5`;
+use `PI_LITELLM_MODEL=gpt-5.4-mini` only for smoke routing. The resolved
+model/small-model choices persist under `~/.pi-headroom/litellm-preferences.json`.
+Latest Pi
 practical proof compared normal `agent-90` with
 `PI_LITELLM_COMPRESSION_MODE=off`; normal compression used `27327` more total
 provider tokens and `35044.40` more billing-equivalent input tokens, with cost
 still unavailable.
 
 `bin/claude-litellm` sets Claude Code's LiteLLM gateway environment, maps
-`LITELLM_MASTER_KEY` to both Anthropic API key env names used by Claude Code,
-limits settings to project scope so user `apiKeyHelper` config does not bypass
-LiteLLM, and writes a generated analytics MCP config under `~/.claude-headroom`
-by default. Set `CLAUDE_LITELLM_HOME` to move that managed home, or
+`LITELLM_MASTER_KEY` to `ANTHROPIC_AUTH_TOKEN`, clears `ANTHROPIC_API_KEY` to
+avoid Claude Code auth-source conflicts, isolates `HOME` and
+`CLAUDE_CONFIG_DIR` to `~/.claude-headroom`, and writes a generated analytics
+MCP config there by default. It symlinks compatible native Claude state from
+`~/.claude` but excludes native settings/config/cache, then separately links
+the native top-level `~/.claude.json` onboarding/trust file. Set
+`CLAUDE_LITELLM_HOME` to move that managed home, or
 `CLAUDE_LITELLM_STATE_DIR` to override the generated state directory in
 wrapper tests/scripts.
 Set `CLAUDE_LITELLM_BASE_URL` when LiteLLM is not on `http://10.20.30.1:24040`,
 and `CLAUDE_LITELLM_ANALYTICS_URL` when analytics is not on
-`http://127.0.0.1:28010`. The wrapper also appends local
+`http://10.20.30.1:28010`. Set `CLAUDE_LITELLM_DISABLE_ANALYTICS_MCP=1` to skip
+the generated MCP config and analytics tool allow-list. The wrapper also appends local
 `X-LLM-Proxy-Client`, `X-LLM-Proxy-Project`, and optional
 `X-LLM-Proxy-Run` headers through Claude Code's `ANTHROPIC_CUSTOM_HEADERS`
 surface for analytics correlation. It preserves existing custom headers and
 does not write them to generated files. The wrapper validates URLs before
 writing managed config and never writes `LITELLM_MASTER_KEY` into `mcp.json`.
+It persists the resolved model, `--effort`, and `--permission-mode` under
+`~/.claude-headroom/litellm-preferences.json`.
 LiteLLM's Claude Code docs describe `/v1/messages` routing for non-Anthropic
 models, but the current deployment only has ChatGPT-backed `gpt-5.x` aliases.
 Fresh real Claude Code smoke reached LiteLLM and analytics, produced
@@ -416,11 +451,16 @@ LiteLLM model route is proven.
 managed `~/.opencode-headroom` home by default, writes a generated
 `opencode.json` custom provider for LiteLLM using `@ai-sdk/openai-compatible`,
 and references `LITELLM_MASTER_KEY` through `{env:LITELLM_MASTER_KEY}` instead
-of copying the key. Set `OPENCODE_LITELLM_HOME` to move the managed home. Set
+of copying the key. It links native OpenCode data/cache state but does not import
+native XDG config. Set `OPENCODE_LITELLM_HOME` to move the managed home. Set
 `OPENCODE_LITELLM_BASE_URL` and `OPENCODE_LITELLM_ANALYTICS_URL` when services
-are not on `http://10.20.30.1:24040` and `http://127.0.0.1:28010`. The wrapper
+are not on `http://10.20.30.1:24040` and `http://10.20.30.1:28010`. Set
+`OPENCODE_LITELLM_DISABLE_ANALYTICS_MCP=1` for remote installs without analytics
+MCP access. The wrapper
 pins `--model litellm/gpt-5.5` for run-style commands unless the command
-already supplies `--model`. `opencode models litellm`, a real `gpt-5.4-mini`
+already supplies `--model`, and persists the resolved model/small-model choices
+under `~/.opencode-headroom/litellm-preferences.json`.
+`opencode models litellm`, a real `gpt-5.4-mini`
 smoke run, and a real practical `gpt-5.5` series have reached LiteLLM with
 marker-correlated provider usage. The practical series currently has no
 provider-reported cached input and no observed cost, so OpenCode routing is
@@ -428,28 +468,32 @@ supported but cache usefulness is not proven.
 
 `bin/copilot-litellm` sets `COPILOT_HOME` to managed `~/.copilot-headroom`,
 disables Copilot auto-update for wrapper sessions, refuses native `~/.copilot`
-by default, and configures Copilot CLI's documented BYOK provider surface for
-the local LiteLLM OpenAI-compatible endpoint. It maps `LITELLM_MASTER_KEY` to
+by default, symlinks native Copilot state except settings/config, and configures
+Copilot CLI's documented BYOK provider surface for the local LiteLLM
+OpenAI-compatible endpoint. It maps `LITELLM_MASTER_KEY` to
 `COPILOT_PROVIDER_BEARER_TOKEN`, sets `COPILOT_PROVIDER_BASE_URL` from
 `COPILOT_LITELLM_BASE_URL` normalized to `/v1`, uses
 `COPILOT_PROVIDER_TYPE=openai`, and defaults to
 `COPILOT_PROVIDER_WIRE_API=responses` for GPT-5.x models. Copilot CLI still
 requires its own supported `--model` selector, so the wrapper adds
-`--model gpt-4.1` for prompt-style calls unless one is already supplied. Set
+`--model gpt-4.1` for prompt-style calls unless one is already supplied, and
+adds `--yolo` so non-interactive runs do not stop for approval prompts. Set
 `COPILOT_LITELLM_CLI_MODEL` for that Copilot-facing selector and
 `COPILOT_LITELLM_MODEL`, `COPILOT_LITELLM_PROVIDER_MODEL_ID`, or
-`COPILOT_LITELLM_WIRE_MODEL` for the LiteLLM provider model. Current proof:
+`COPILOT_LITELLM_WIRE_MODEL` for the LiteLLM provider model. It passes
+`X-LLM-Proxy-*` headers through `COPILOT_AGENT_REQUEST_HEADERS`; set
+`COPILOT_LITELLM_COMPRESSION_MODE=off` for compression-disabled runs. Copilot
+provider preferences are persisted under
+`~/.copilot-headroom/litellm-preferences.json`. Current proof:
 real Copilot CLI `gpt-4.1` selector with `gpt-5.4-mini` provider wire model
 routes through LiteLLM and returns the expected smoke marker. Cache/cost
 usefulness is not claimed.
 
 For marker-capable wrappers, use `*_LITELLM_COMPRESSION_MODE=off` only as a
-proof baseline. Codex, Claude Code, OpenCode, and Pi normalize that setting to
-`X-LLM-Proxy-Compression: off`; the callback records
+proof baseline. Codex, Claude Code, OpenCode, Copilot, and Pi normalize that
+setting to `X-LLM-Proxy-Compression: off`; the callback records
 `litellm_proxy_compression_mode=off`, skips Headroom compression transforms,
-and still records provider usage rows for aggregate comparison. Copilot CLI is
-excluded because its documented BYOK surface does not expose local request
-headers.
+and still records provider usage rows for aggregate comparison.
 
 ## Agent-90 Usefulness Harness
 

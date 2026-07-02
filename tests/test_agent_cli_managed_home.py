@@ -122,3 +122,28 @@ def test_find_real_executable_skips_wrapper_path(tmp_path: Path, monkeypatch) ->
     monkeypatch.setenv("PATH", os.pathsep.join([str(wrapper.parent), str(real.parent)]))
 
     assert find_real_executable(binary_name="codex", wrapper_path=wrapper) == str(real)
+
+
+def test_find_real_executable_skips_legacy_litellm_shims(
+    tmp_path: Path, monkeypatch
+) -> None:
+    wrapper = tmp_path / "wrapper" / "codex-litellm"
+    stale = tmp_path / "stale" / "codex"
+    real = tmp_path / "real" / "codex"
+    wrapper.parent.mkdir()
+    stale.parent.mkdir()
+    real.parent.mkdir()
+    wrapper.write_text("#!/bin/sh\n")
+    stale.write_text(
+        "#!/usr/bin/env bash\n"
+        'ENV_FILE="${LITELLM_PROXY_ENV_FILE:-$HOME/.config/litellm-proxy/env}"\n'
+        'export OPENAI_BASE_URL="${OPENAI_BASE_URL:-http://10.20.30.1:11435/v1}"\n'
+        'exec npx --yes @openai/codex "$@"\n'
+    )
+    real.write_text("#!/usr/bin/env node\n")
+    wrapper.chmod(0o755)
+    stale.chmod(0o755)
+    real.chmod(0o755)
+    monkeypatch.setenv("PATH", os.pathsep.join([str(stale.parent), str(real.parent)]))
+
+    assert find_real_executable(binary_name="codex", wrapper_path=wrapper) == str(real)

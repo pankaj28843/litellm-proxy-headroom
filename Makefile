@@ -15,8 +15,9 @@ up: init
 	$(COMPOSE) up -d --no-build --wait --wait-timeout 240
 	@. ./.env; printf '\nPhoenix:   http://127.0.0.1:%s\n' "$${PHOENIX_HOST_PORT:-26006}"
 	@. ./.env; printf 'LiteLLM:   http://%s:%s\n' "$${LITELLM_VM_BIND_HOST:-10.20.30.1}" "$${LITELLM_PROXY_PORT:-24040}"
-	@. ./.env; printf 'Analytics: http://127.0.0.1:%s\n' "$${ANALYTICS_BACKEND_PORT:-28010}"
-	@. ./.env; printf 'MCP:       http://127.0.0.1:%s/mcp/\n' "$${ANALYTICS_BACKEND_PORT:-28010}"
+	@. ./.env; printf 'Analytics: http://%s:%s\n' "$${ANALYTICS_BACKEND_BIND_HOST:-10.20.30.1}" "$${ANALYTICS_BACKEND_PORT:-28010}"
+	@. ./.env; printf 'Dashboard: http://%s:%s/dashboard\n' "$${ANALYTICS_BACKEND_BIND_HOST:-10.20.30.1}" "$${ANALYTICS_BACKEND_PORT:-28010}"
+	@. ./.env; printf 'MCP:       http://%s:%s/mcp/\n' "$${ANALYTICS_BACKEND_BIND_HOST:-10.20.30.1}" "$${ANALYTICS_BACKEND_PORT:-28010}"
 	@printf '\nIf ChatGPT auth is missing, run: make logs SERVICE=litellm\n'
 
 init: env
@@ -54,7 +55,7 @@ ps:
 	$(COMPOSE) ps
 
 mcp: init
-	@. ./.env; printf 'Analytics MCP endpoint: http://127.0.0.1:%s/mcp/\n' "$${ANALYTICS_BACKEND_PORT:-28010}"
+	@. ./.env; printf 'Analytics MCP endpoint: http://%s:%s/mcp/\n' "$${ANALYTICS_BACKEND_BIND_HOST:-10.20.30.1}" "$${ANALYTICS_BACKEND_PORT:-28010}"
 
 models:
 	uv run python scripts/update_litellm_models.py

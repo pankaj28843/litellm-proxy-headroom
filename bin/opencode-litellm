@@ -13,15 +13,23 @@ if SRC_ROOT.exists():
     sys.path.insert(0, str(SRC_ROOT))
 
 from litellm_proxy_headroom.agent_cli.managed_home import (  # noqa: E402
+    PREFERENCES_FILE_NAME,
     compression_mode_header_value,
     default_home_path,
     find_real_executable,
     load_dotenv,
+    load_preferences,
     normalize_base_url,
+    option_value,
+    preference_value,
     project_name_from_cwd,
+    sync_native_state,
+    truthy_env,
+    write_preferences,
 )
 
 MANAGED_HOME_NAME = ".opencode-headroom"
+LOCAL_BACKUP_TAG = "opencode-headroom-local-backup"
 PROVIDER_ID = "litellm"
 MODEL_RE = re.compile(r"^[A-Za-z0-9_.:/-]+$")
 NO_MODEL_COMMANDS = {
@@ -54,8 +62,7 @@ def die(message: str, code: int = 1) -> None:
 
 def needs_api_key(argv: list[str]) -> bool:
     return not any(
-        arg in {"-h", "--help", "help", "-v", "--version", "completion"}
-        for arg in argv
+        arg in {"-h", "--help", "help", "-v", "--version", "completion"} for arg in argv
     )
 
 
@@ -80,16 +87,16 @@ def managed_home() -> Path:
 
 
 def has_model_arg(argv: list[str]) -> bool:
-    expect_value = False
-    for arg in argv:
-        if expect_value:
-            return True
-        if arg in {"-m", "--model"}:
-            expect_value = True
-            continue
-        if arg.startswith("--model="):
-            return True
-    return expect_value
+    return option_value(argv, "-m", "--model") is not None
+
+
+def model_from_arg(argv: list[str]) -> str | None:
+    value = option_value(argv, "-m", "--model")
+    if not value:
+        return None
+    if value.startswith(f"{PROVIDER_ID}/"):
+        return value.split("/", 1)[1]
+    return value
 
 
 def should_add_model_arg(argv: list[str]) -> bool:
@@ -99,12 +106,77 @@ def should_add_model_arg(argv: list[str]) -> bool:
     return first_command not in NO_MODEL_COMMANDS
 
 
+def default_native_xdg_path(kind: str) -> Path:
+    home = Path(os.environ.get("HOME", str(REPO_ROOT / "tmp"))).expanduser()
+    if kind == "config":
+        base = Path(os.environ.get("XDG_CONFIG_HOME", home / ".config")).expanduser()
+    elif kind == "data":
+        base = Path(
+            os.environ.get("XDG_DATA_HOME", home / ".local" / "share")
+        ).expanduser()
+    elif kind == "cache":
+        base = Path(os.environ.get("XDG_CACHE_HOME", home / ".cache")).expanduser()
+    else:
+        raise ValueError(kind)
+    return base / "opencode"
+
+
+def sync_native_xdg_state(
+    *, config_home: Path, data_home: Path, cache_home: Path
+) -> None:
+    targets = (
+        (default_native_xdg_path("data"), data_home / "opencode"),
+        (default_native_xdg_path("cache"), cache_home / "opencode"),
+    )
+    for native_home, managed in targets:
+        if native_home.exists():
+            managed.mkdir(parents=True, exist_ok=True)
+            sync_native_state(
+                native_home=native_home,
+                managed_home=managed,
+                excluded_names={
+                    "opencode.json",
+                    "settings.json",
+                    PREFERENCES_FILE_NAME,
+                },
+                excluded_globs=("*.config.*", "settings*.json"),
+                backup_tag=LOCAL_BACKUP_TAG,
+            )
+
+
+def resolved_preferences(
+    argv: list[str], preferences: dict[str, str], *, dotenv_keys: set[str]
+) -> dict[str, str]:
+    model = validate_model(
+        preference_value(
+            cli_value=model_from_arg(argv),
+            env_name="OPENCODE_LITELLM_MODEL",
+            preference_key="model",
+            preferences=preferences,
+            dotenv_keys=dotenv_keys,
+            default="gpt-5.5",
+        ),
+        env_name="OPENCODE_LITELLM_MODEL",
+    )
+    small_model = validate_model(
+        preference_value(
+            env_name="OPENCODE_LITELLM_SMALL_MODEL",
+            preference_key="small_model",
+            preferences=preferences,
+            dotenv_keys=dotenv_keys,
+            default="gpt-5.4-mini",
+        ),
+        env_name="OPENCODE_LITELLM_SMALL_MODEL",
+    )
+    return {**preferences, "model": model, "small_model": small_model}
+
+
 def model_config(
     model: str,
     small_model: str,
     *,
     base_url: str,
-    analytics_url: str,
+    analytics_url: str | None,
     compression_mode: str | None,
 ) -> dict[str, object]:
     models: dict[str, object] = {
@@ -118,10 +190,8 @@ def model_config(
         "X-LLM-Proxy-Run": "{env:LITELLM_PROXY_RUN_MARKER}",
     }
     if compression_mode:
-        headers["X-LLM-Proxy-Compression"] = (
-            "{env:OPENCODE_LITELLM_COMPRESSION_MODE}"
-        )
-    return {
+        headers["X-LLM-Proxy-Compression"] = "{env:OPENCODE_LITELLM_COMPRESSION_MODE}"
+    config: dict[str, object] = {
         "$schema": "https://opencode.ai/config.json",
         "autoupdate": False,
         "model": f"{PROVIDER_ID}/{model}",
@@ -139,15 +209,17 @@ def model_config(
                 "models": models,
             }
         },
-        "mcp": {
+    }
+    if analytics_url is not None:
+        config["mcp"] = {
             "analytics": {
                 "type": "remote",
                 "url": analytics_url,
                 "enabled": True,
                 "oauth": False,
             }
-        },
-    }
+        }
+    return config
 
 
 def write_config(path: Path, data: dict[str, object]) -> None:
@@ -164,11 +236,14 @@ def real_opencode() -> str:
             wrapper_path=Path(__file__),
         )
     except FileNotFoundError:
-        die("could not find an opencode binary on PATH other than this wrapper.", code=127)
+        die(
+            "could not find an opencode binary on PATH other than this wrapper.",
+            code=127,
+        )
 
 
 def main(argv: list[str]) -> int:
-    load_dotenv(REPO_ROOT / ".env")
+    dotenv_keys = load_dotenv(REPO_ROOT / ".env")
 
     if not os.environ.get("LITELLM_MASTER_KEY") and needs_api_key(argv):
         die(
@@ -181,10 +256,16 @@ def main(argv: list[str]) -> int:
             env_name="OPENCODE_LITELLM_BASE_URL",
             suffix="/v1",
         )
-        analytics_mcp_url = normalize_base_url(
-            os.environ.get("OPENCODE_LITELLM_ANALYTICS_URL", "http://127.0.0.1:28010"),
-            env_name="OPENCODE_LITELLM_ANALYTICS_URL",
-            suffix="/mcp",
+        analytics_mcp_url = (
+            None
+            if truthy_env("OPENCODE_LITELLM_DISABLE_ANALYTICS_MCP", False)
+            else normalize_base_url(
+                os.environ.get(
+                    "OPENCODE_LITELLM_ANALYTICS_URL", "http://127.0.0.1:28010"
+                ),
+                env_name="OPENCODE_LITELLM_ANALYTICS_URL",
+                suffix="/mcp",
+            )
         )
     except ValueError as exc:
         die(str(exc))
@@ -200,23 +281,26 @@ def main(argv: list[str]) -> int:
     else:
         os.environ["OPENCODE_LITELLM_COMPRESSION_MODE"] = compression_mode
 
-    model = validate_model(
-        os.environ.get("OPENCODE_LITELLM_MODEL", "gpt-5.5"),
-        env_name="OPENCODE_LITELLM_MODEL",
-    )
-    small_model = validate_model(
-        os.environ.get("OPENCODE_LITELLM_SMALL_MODEL", "gpt-5.4-mini"),
-        env_name="OPENCODE_LITELLM_SMALL_MODEL",
-    )
-
     home = managed_home()
     home.mkdir(parents=True, exist_ok=True)
+    preferences = resolved_preferences(
+        argv, load_preferences(home), dotenv_keys=dotenv_keys
+    )
+    write_preferences(home, preferences)
+    model = preferences["model"]
+    small_model = preferences["small_model"]
     config_dir = home / "config-dir"
     xdg_config_home = home / "xdg-config"
     xdg_data_home = home / "xdg-data"
     xdg_cache_home = home / "xdg-cache"
     for path in (config_dir, xdg_config_home, xdg_data_home, xdg_cache_home):
         path.mkdir(parents=True, exist_ok=True)
+    if truthy_env("OPENCODE_LITELLM_LINK_NATIVE_STATE", True):
+        sync_native_xdg_state(
+            config_home=xdg_config_home,
+            data_home=xdg_data_home,
+            cache_home=xdg_cache_home,
+        )
 
     config_path = home / "opencode.json"
     write_config(

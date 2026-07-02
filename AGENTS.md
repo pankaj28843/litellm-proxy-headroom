@@ -29,6 +29,14 @@ operator-facing service in this repository.
   When a repo-owned name changes, update all code, docs, tests, and scripts to
   the new name in the same change and delete the old path.
 - Usefulness comes before unit tests. For integration fixes, first prove the real workflow works with runtime evidence: the relevant localhost endpoint, Compose service, browser network capture, logs, or trace output. Add or update unit/config tests after that evidence, not as the primary proof.
+- For `bin/*-litellm` wrapper changes, run real non-interactive
+  `./bin/*-litellm` invocations through LiteLLM before treating unit tests as
+  meaningful. Tests are regression coverage after runtime proof, not the proof
+  itself.
+- Wrapper managed homes should be cleanrooms for repo-owned config. Bring
+  compatible native default-home state through symlinks, but do not import
+  native settings, generated config, model/provider config, or route caches that
+  can override the wrapper-owned LiteLLM endpoint.
 
 ## Primary Usefulness Rule
 
@@ -86,3 +94,11 @@ operator-facing service in this repository.
 - Do not run Headroom CLI commands such as `headroom proxy`, `headroom wrap`,
   `headroom init`, or `headroom mcp install`.
 - Do not print or inspect ChatGPT/Codex auth token contents.
+- Remote sibling-VM wrapper installs should use
+  `scripts/install_remote_wrappers.py`, which writes secret-bearing launchers
+  only on the target machine. Keep remote launchers compression-disabled by
+  default with `*_LITELLM_COMPRESSION_MODE=off` and
+  `*_LITELLM_DISABLE_ANALYTICS_MCP=1` where supported.
+- Current reachable remote install targets are `pankaj@10.20.30.102` and
+  `neeraj@10.20.30.131`. The previously typed `pankaj@01.20.30.102` was not
+  reachable as SSH parsed it.

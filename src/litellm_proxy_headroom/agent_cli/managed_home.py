@@ -4,12 +4,19 @@ import json
 import os
 import re
 import time
+from fnmatch import fnmatch
 from pathlib import Path
 from urllib.parse import quote, urlsplit, urlunsplit
 
 BARE_KEY_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 COMPRESSION_MODE_OFF_VALUES = {"0", "false", "no", "off", "disabled"}
 COMPRESSION_MODE_ON_VALUES = {"1", "true", "yes", "on", "enabled"}
+PREFERENCES_FILE_NAME = "litellm-preferences.json"
+LEGACY_LITELLM_WRAPPER_MARKERS = (
+    b"LITELLM_PROXY_ENV_FILE",
+    b".config/litellm-proxy/env",
+    b"10.20.30.1:11435",
+)
 
 
 def default_home_path(name: str, *, fallback: Path) -> Path:
@@ -19,9 +26,10 @@ def default_home_path(name: str, *, fallback: Path) -> Path:
     return fallback
 
 
-def load_dotenv(path: Path) -> None:
+def load_dotenv(path: Path) -> set[str]:
+    loaded: set[str] = set()
     if not path.exists():
-        return
+        return loaded
     for raw_line in path.read_text(encoding="utf-8").splitlines():
         line = raw_line.strip()
         if not line or line.startswith("#"):
@@ -38,6 +46,28 @@ def load_dotenv(path: Path) -> None:
         if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
             value = value[1:-1]
         os.environ[key] = value
+        loaded.add(key)
+    return loaded
+
+
+def preference_value(
+    *,
+    env_name: str,
+    preference_key: str,
+    preferences: dict[str, str],
+    dotenv_keys: set[str],
+    cli_value: str | None = None,
+    default: str = "",
+) -> str:
+    shell_value = None if env_name in dotenv_keys else os.environ.get(env_name)
+    dotenv_value = os.environ.get(env_name) if env_name in dotenv_keys else None
+    return (
+        cli_value
+        or shell_value
+        or preferences.get(preference_key)
+        or dotenv_value
+        or default
+    )
 
 
 def truthy_env(name: str, default: bool) -> bool:
@@ -45,6 +75,53 @@ def truthy_env(name: str, default: bool) -> bool:
     if raw is None:
         return default
     return raw in {"1", "true", "TRUE", "yes", "YES", "on", "ON"}
+
+
+def load_preferences(home: Path) -> dict[str, str]:
+    path = home / PREFERENCES_FILE_NAME
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except OSError:
+        return {}
+    except json.JSONDecodeError:
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    return {
+        str(key): str(value)
+        for key, value in data.items()
+        if isinstance(key, str) and value not in {None, ""}
+    }
+
+
+def write_preferences(home: Path, preferences: dict[str, str | None]) -> None:
+    home.mkdir(parents=True, exist_ok=True)
+    cleaned = {
+        key: value
+        for key, value in sorted(preferences.items())
+        if value is not None and value != ""
+    }
+    path = home / PREFERENCES_FILE_NAME
+    tmp_path = path.with_suffix(f"{path.suffix}.{os.getpid()}.tmp")
+    tmp_path.write_text(
+        json.dumps(cleaned, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    tmp_path.replace(path)
+
+
+def option_value(argv: list[str], *names: str) -> str | None:
+    expect_value = False
+    for arg in argv:
+        if expect_value:
+            return arg
+        if arg in names:
+            expect_value = True
+            continue
+        for name in names:
+            if arg.startswith(f"{name}="):
+                return arg.split("=", 1)[1]
+    return None
 
 
 def compression_mode_header_value(raw: str | None, *, env_name: str) -> str | None:
@@ -137,11 +214,14 @@ def sync_native_state(
     managed_home: Path,
     excluded_names: set[str],
     backup_tag: str,
+    excluded_globs: tuple[str, ...] = (),
 ) -> None:
     if not native_home.exists():
         return
     for source in native_home.iterdir():
         if source.name in excluded_names:
+            continue
+        if any(fnmatch(source.name, pattern) for pattern in excluded_globs):
             continue
         if source.name.endswith(".headroom-backup"):
             continue
@@ -158,6 +238,38 @@ def sync_native_state(
         destination.symlink_to(source, target_is_directory=source.is_dir())
 
 
+def sync_native_file(
+    *,
+    native_file: Path,
+    managed_file: Path,
+    backup_tag: str,
+) -> None:
+    if not native_file.exists():
+        return
+    if managed_file.is_symlink():
+        if managed_file.resolve(strict=False) == native_file.resolve(strict=False):
+            return
+        managed_file.unlink()
+    elif managed_file.exists():
+        backup = managed_file.with_name(
+            f".{managed_file.name}.{backup_tag}.{int(time.time())}.{os.getpid()}"
+        )
+        managed_file.rename(backup)
+    managed_file.symlink_to(native_file, target_is_directory=native_file.is_dir())
+
+
+def is_legacy_litellm_wrapper(path: Path) -> bool:
+    if path.is_symlink() or not path.is_file():
+        return False
+    try:
+        data = path.read_bytes()[:4096]
+    except OSError:
+        return False
+    return data.startswith(b"#!") and any(
+        marker in data for marker in LEGACY_LITELLM_WRAPPER_MARKERS
+    )
+
+
 def find_real_executable(*, binary_name: str, wrapper_path: Path) -> str:
     self_path = wrapper_path.resolve()
     candidates: list[str] = []
@@ -165,7 +277,9 @@ def find_real_executable(*, binary_name: str, wrapper_path: Path) -> str:
         candidate = Path(path_dir) / binary_name
         if candidate.exists() and os.access(candidate, os.X_OK):
             resolved = candidate.resolve()
-            if resolved != self_path and str(resolved) not in candidates:
+            if resolved == self_path or is_legacy_litellm_wrapper(candidate):
+                continue
+            if str(resolved) not in candidates:
                 candidates.append(str(candidate))
     if not candidates:
         raise FileNotFoundError(binary_name)

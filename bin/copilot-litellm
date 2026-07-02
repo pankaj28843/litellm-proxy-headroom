@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import json
 import os
 import sys
 from pathlib import Path
@@ -11,13 +12,23 @@ if SRC_ROOT.exists():
     sys.path.insert(0, str(SRC_ROOT))
 
 from litellm_proxy_headroom.agent_cli.managed_home import (  # noqa: E402
+    PREFERENCES_FILE_NAME,
+    compression_mode_header_value,
     default_home_path,
     find_real_executable,
     load_dotenv,
+    load_preferences,
     normalize_base_url,
+    option_value,
+    preference_value,
+    project_name_from_cwd,
+    sync_native_state,
+    truthy_env,
+    write_preferences,
 )
 
 MANAGED_HOME_NAME = ".copilot-headroom"
+LOCAL_BACKUP_TAG = "copilot-headroom-local-backup"
 DEFAULT_CLI_MODEL = "gpt-4.1"
 DEFAULT_WIRE_MODEL = "gpt-5.5"
 
@@ -49,31 +60,14 @@ def managed_home() -> Path:
 
 
 def config_dir_arg(argv: list[str]) -> str | None:
-    expect_value = False
-    for arg in argv:
-        if expect_value:
-            return arg
-        if arg == "--config-dir":
-            expect_value = True
-            continue
-        if arg.startswith("--config-dir="):
-            return arg.split("=", 1)[1]
-    if expect_value:
+    value = option_value(argv, "--config-dir")
+    if value is None and argv and argv[-1] == "--config-dir":
         die("--config-dir requires a value.")
-    return None
+    return value
 
 
 def has_model_arg(argv: list[str]) -> bool:
-    expect_value = False
-    for arg in argv:
-        if expect_value:
-            return True
-        if arg == "--model":
-            expect_value = True
-            continue
-        if arg.startswith("--model="):
-            return True
-    return expect_value
+    return option_value(argv, "--model") is not None
 
 
 def needs_provider_key(argv: list[str]) -> bool:
@@ -81,6 +75,92 @@ def needs_provider_key(argv: list[str]) -> bool:
         arg in {"-h", "--help", "help", "-v", "--version", "version", "update"}
         for arg in argv
     )
+
+
+def resolved_preferences(
+    argv: list[str], preferences: dict[str, str], *, dotenv_keys: set[str]
+) -> dict[str, str]:
+    cli_model = preference_value(
+        cli_value=option_value(argv, "--model"),
+        env_name="COPILOT_LITELLM_CLI_MODEL",
+        preference_key="cli_model",
+        preferences=preferences,
+        dotenv_keys=dotenv_keys,
+        default=DEFAULT_CLI_MODEL,
+    )
+    wire_model = preference_value(
+        env_name="COPILOT_LITELLM_MODEL",
+        preference_key="wire_model",
+        preferences=preferences,
+        dotenv_keys=dotenv_keys,
+        default=DEFAULT_WIRE_MODEL,
+    )
+    provider_model_id = preference_value(
+        env_name="COPILOT_LITELLM_PROVIDER_MODEL_ID",
+        preference_key="provider_model_id",
+        preferences=preferences,
+        dotenv_keys=dotenv_keys,
+        default=wire_model,
+    )
+    provider_wire_model = preference_value(
+        env_name="COPILOT_LITELLM_WIRE_MODEL",
+        preference_key="provider_wire_model",
+        preferences=preferences,
+        dotenv_keys=dotenv_keys,
+        default=wire_model,
+    )
+    wire_api = preference_value(
+        env_name="COPILOT_LITELLM_WIRE_API",
+        preference_key="wire_api",
+        preferences=preferences,
+        dotenv_keys=dotenv_keys,
+        default="responses",
+    )
+    transport = preference_value(
+        env_name="COPILOT_LITELLM_TRANSPORT",
+        preference_key="transport",
+        preferences=preferences,
+        dotenv_keys=dotenv_keys,
+        default="http",
+    )
+    max_prompt_tokens = preference_value(
+        env_name="COPILOT_LITELLM_MAX_PROMPT_TOKENS",
+        preference_key="max_prompt_tokens",
+        preferences=preferences,
+        dotenv_keys=dotenv_keys,
+    )
+    max_output_tokens = preference_value(
+        env_name="COPILOT_LITELLM_MAX_OUTPUT_TOKENS",
+        preference_key="max_output_tokens",
+        preferences=preferences,
+        dotenv_keys=dotenv_keys,
+    )
+    return {
+        **preferences,
+        "cli_model": cli_model,
+        "wire_model": wire_model,
+        "provider_model_id": provider_model_id,
+        "provider_wire_model": provider_wire_model,
+        "wire_api": wire_api,
+        "transport": transport,
+        "max_prompt_tokens": max_prompt_tokens,
+        "max_output_tokens": max_output_tokens,
+    }
+
+
+def has_yolo_arg(argv: list[str]) -> bool:
+    return any(arg in {"--yolo", "--allow-all"} for arg in argv)
+
+
+def default_extra_args(argv: list[str], *, cli_model: str) -> list[str]:
+    if not needs_provider_key(argv):
+        return []
+    extra_args: list[str] = []
+    if not has_model_arg(argv):
+        extra_args.extend(["--model", cli_model])
+    if not has_yolo_arg(argv):
+        extra_args.append("--yolo")
+    return extra_args
 
 
 def optional_positive_int_env(source_env: str, target_env: str) -> None:
@@ -97,6 +177,44 @@ def optional_positive_int_env(source_env: str, target_env: str) -> None:
     os.environ[target_env] = str(value)
 
 
+def header_value(value: str | None) -> str | None:
+    if value is None:
+        return None
+    cleaned = value.replace("\r", " ").replace("\n", " ").strip()
+    return cleaned or None
+
+
+def merge_agent_request_headers(
+    *,
+    client: str,
+    project: str | None,
+    marker: str | None,
+    compression_mode: str | None,
+) -> None:
+    raw = os.environ.get("COPILOT_AGENT_REQUEST_HEADERS")
+    try:
+        parsed = json.loads(raw) if raw else {}
+    except json.JSONDecodeError:
+        parsed = {}
+    headers = {
+        str(key): str(value)
+        for key, value in parsed.items()
+        if isinstance(key, str) and value is not None
+    }
+    headers["X-LLM-Proxy-Client"] = header_value(client) or "copilot"
+    cleaned_project = header_value(project)
+    if cleaned_project:
+        headers["X-LLM-Proxy-Project"] = cleaned_project
+    cleaned_marker = header_value(marker)
+    if cleaned_marker:
+        headers["X-LLM-Proxy-Run"] = cleaned_marker
+    if compression_mode:
+        headers["X-LLM-Proxy-Compression"] = compression_mode
+    os.environ["COPILOT_AGENT_REQUEST_HEADERS"] = json.dumps(
+        headers, separators=(",", ":"), sort_keys=True
+    )
+
+
 def real_copilot() -> str:
     try:
         return find_real_executable(
@@ -110,7 +228,7 @@ def real_copilot() -> str:
 
 
 def main(argv: list[str]) -> int:
-    load_dotenv(REPO_ROOT / ".env")
+    dotenv_keys = load_dotenv(REPO_ROOT / ".env")
 
     try:
         litellm_base_url = normalize_base_url(
@@ -120,6 +238,17 @@ def main(argv: list[str]) -> int:
         )
     except ValueError as exc:
         die(str(exc))
+    try:
+        compression_mode = compression_mode_header_value(
+            os.environ.get("COPILOT_LITELLM_COMPRESSION_MODE"),
+            env_name="COPILOT_LITELLM_COMPRESSION_MODE",
+        )
+    except ValueError as exc:
+        die(str(exc))
+    if compression_mode is None:
+        os.environ.pop("COPILOT_LITELLM_COMPRESSION_MODE", None)
+    else:
+        os.environ["COPILOT_LITELLM_COMPRESSION_MODE"] = compression_mode
 
     litellm_master_key = os.environ.get("LITELLM_MASTER_KEY")
     if litellm_master_key:
@@ -149,26 +278,50 @@ def main(argv: list[str]) -> int:
         )
 
     config_home.mkdir(parents=True, exist_ok=True)
+    if not explicit_config_dir and truthy_env(
+        "COPILOT_LITELLM_LINK_NATIVE_STATE", True
+    ):
+        sync_native_state(
+            native_home=native_home,
+            managed_home=config_home,
+            excluded_names={
+                "config.json",
+                "settings.json",
+                "settings.local.json",
+                PREFERENCES_FILE_NAME,
+            },
+            excluded_globs=("*.config.*", "settings*.json"),
+            backup_tag=LOCAL_BACKUP_TAG,
+        )
+    preferences = resolved_preferences(
+        argv,
+        load_preferences(config_home),
+        dotenv_keys=dotenv_keys,
+    )
+    write_preferences(config_home, preferences)
     os.environ["COPILOT_HOME"] = str(config_home)
     os.environ.setdefault("COPILOT_AUTO_UPDATE", "false")
     os.environ["COPILOT_PROVIDER_BASE_URL"] = litellm_base_url
     os.environ["COPILOT_PROVIDER_TYPE"] = os.environ.get(
         "COPILOT_LITELLM_PROVIDER_TYPE", "openai"
     )
-    os.environ["COPILOT_PROVIDER_WIRE_API"] = os.environ.get(
-        "COPILOT_LITELLM_WIRE_API", "responses"
-    )
-    os.environ["COPILOT_PROVIDER_TRANSPORT"] = os.environ.get(
-        "COPILOT_LITELLM_TRANSPORT", "http"
-    )
+    os.environ["COPILOT_PROVIDER_WIRE_API"] = preferences["wire_api"]
+    os.environ["COPILOT_PROVIDER_TRANSPORT"] = preferences["transport"]
 
-    cli_model = os.environ.get("COPILOT_LITELLM_CLI_MODEL", DEFAULT_CLI_MODEL)
-    wire_model = os.environ.get("COPILOT_LITELLM_MODEL", DEFAULT_WIRE_MODEL)
-    provider_model_id = os.environ.get("COPILOT_LITELLM_PROVIDER_MODEL_ID", wire_model)
-    provider_wire_model = os.environ.get("COPILOT_LITELLM_WIRE_MODEL", wire_model)
+    cli_model = preferences["cli_model"]
+    provider_model_id = preferences["provider_model_id"]
+    provider_wire_model = preferences["provider_wire_model"]
     os.environ["COPILOT_MODEL"] = cli_model
     os.environ["COPILOT_PROVIDER_MODEL_ID"] = provider_model_id
     os.environ["COPILOT_PROVIDER_WIRE_MODEL"] = provider_wire_model
+    if preferences.get("max_prompt_tokens"):
+        os.environ["COPILOT_LITELLM_MAX_PROMPT_TOKENS"] = preferences[
+            "max_prompt_tokens"
+        ]
+    if preferences.get("max_output_tokens"):
+        os.environ["COPILOT_LITELLM_MAX_OUTPUT_TOKENS"] = preferences[
+            "max_output_tokens"
+        ]
     optional_positive_int_env(
         "COPILOT_LITELLM_MAX_PROMPT_TOKENS",
         "COPILOT_PROVIDER_MAX_PROMPT_TOKENS",
@@ -177,13 +330,17 @@ def main(argv: list[str]) -> int:
         "COPILOT_LITELLM_MAX_OUTPUT_TOKENS",
         "COPILOT_PROVIDER_MAX_OUTPUT_TOKENS",
     )
+    client = os.environ.get("COPILOT_LITELLM_CLIENT", "copilot")
+    project = os.environ.get("COPILOT_LITELLM_PROJECT") or project_name_from_cwd()
+    merge_agent_request_headers(
+        client=client,
+        project=project,
+        marker=os.environ.get("LITELLM_PROXY_RUN_MARKER"),
+        compression_mode=compression_mode,
+    )
 
     executable = real_copilot()
-    extra_args = (
-        []
-        if has_model_arg(argv) or not needs_provider_key(argv)
-        else ["--model", cli_model]
-    )
+    extra_args = default_extra_args(argv, cli_model=cli_model)
     os.execvpe(executable, [executable, *extra_args, *argv], os.environ.copy())
     return 127
 

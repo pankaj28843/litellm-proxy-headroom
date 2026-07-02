@@ -13,15 +13,22 @@ if SRC_ROOT.exists():
     sys.path.insert(0, str(SRC_ROOT))
 
 from litellm_proxy_headroom.agent_cli.managed_home import (  # noqa: E402
+    PREFERENCES_FILE_NAME,
     compression_mode_header_value,
     default_home_path,
     find_real_executable,
     load_dotenv,
+    load_preferences,
     normalize_base_url,
+    preference_value,
     project_name_from_cwd,
+    sync_native_state,
+    truthy_env,
+    write_preferences,
 )
 
 MANAGED_HOME_NAME = ".pi-headroom"
+LOCAL_BACKUP_TAG = "pi-headroom-local-backup"
 PROVIDER_ID = "litellm"
 MODEL_RE = re.compile(r"^[A-Za-z0-9_.:/-]+$")
 NO_MODEL_COMMANDS = {
@@ -48,6 +55,13 @@ def default_managed_home() -> Path:
     return default_home_path(
         MANAGED_HOME_NAME,
         fallback=REPO_ROOT / "tmp" / "pi-headroom-home",
+    )
+
+
+def default_native_home() -> Path:
+    return default_home_path(
+        ".pi/agent",
+        fallback=REPO_ROOT / "tmp" / "missing-native-pi-home",
     )
 
 
@@ -112,6 +126,42 @@ def should_add_model_args(argv: list[str]) -> bool:
     if any(arg in NO_MODEL_COMMANDS for arg in argv):
         return False
     return first_command(argv) not in NO_MODEL_COMMANDS
+
+
+def model_from_arg(argv: list[str]) -> str | None:
+    value = option_value(argv, "--model")
+    if not value:
+        return None
+    if value.startswith(f"{PROVIDER_ID}/"):
+        return value.split("/", 1)[1]
+    return value
+
+
+def resolved_preferences(
+    argv: list[str], preferences: dict[str, str], *, dotenv_keys: set[str]
+) -> dict[str, str]:
+    model = validate_model(
+        preference_value(
+            cli_value=model_from_arg(argv),
+            env_name="PI_LITELLM_MODEL",
+            preference_key="model",
+            preferences=preferences,
+            dotenv_keys=dotenv_keys,
+            default="gpt-5.5",
+        ),
+        env_name="PI_LITELLM_MODEL",
+    )
+    small_model = validate_model(
+        preference_value(
+            env_name="PI_LITELLM_SMALL_MODEL",
+            preference_key="small_model",
+            preferences=preferences,
+            dotenv_keys=dotenv_keys,
+            default="gpt-5.4-mini",
+        ),
+        env_name="PI_LITELLM_SMALL_MODEL",
+    )
+    return {**preferences, "model": model, "small_model": small_model}
 
 
 def model_entry(model: str) -> dict[str, object]:
@@ -194,7 +244,7 @@ def default_extra_args(argv: list[str], *, model: str) -> list[str]:
 
 
 def main(argv: list[str]) -> int:
-    load_dotenv(REPO_ROOT / ".env")
+    dotenv_keys = load_dotenv(REPO_ROOT / ".env")
 
     try:
         litellm_base_url = normalize_base_url(
@@ -221,17 +271,30 @@ def main(argv: list[str]) -> int:
             f"LITELLM_MASTER_KEY is not set; add it to {REPO_ROOT / '.env'} or the environment."
         )
 
-    model = validate_model(
-        os.environ.get("PI_LITELLM_MODEL", "gpt-5.5"),
-        env_name="PI_LITELLM_MODEL",
-    )
-    small_model = validate_model(
-        os.environ.get("PI_LITELLM_SMALL_MODEL", "gpt-5.4-mini"),
-        env_name="PI_LITELLM_SMALL_MODEL",
-    )
-
     home = managed_home()
     home.mkdir(parents=True, exist_ok=True)
+    native_home = Path(os.environ.get("PI_LITELLM_NATIVE_HOME", default_native_home()))
+    native_home = native_home.expanduser()
+    if truthy_env("PI_LITELLM_LINK_NATIVE_STATE", True):
+        sync_native_state(
+            native_home=native_home,
+            managed_home=home,
+            excluded_names={
+                "config.json",
+                "models.json",
+                "settings.json",
+                "settings.local.json",
+                PREFERENCES_FILE_NAME,
+            },
+            excluded_globs=("*.config.*", "settings*.json"),
+            backup_tag=LOCAL_BACKUP_TAG,
+        )
+    preferences = resolved_preferences(
+        argv, load_preferences(home), dotenv_keys=dotenv_keys
+    )
+    write_preferences(home, preferences)
+    model = preferences["model"]
+    small_model = preferences["small_model"]
     write_config(
         home / "models.json",
         models_config(

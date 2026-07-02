@@ -120,19 +120,18 @@ def test_litellm_service_does_not_masquerade_as_headroom_wrap_stack() -> None:
     assert "HEADROOM_STACK" not in environment
 
 
-def test_compose_keeps_user_facing_services_private_except_litellm_vm_bind() -> None:
+def test_compose_exposes_litellm_and_usage_dashboard_on_vm_bind() -> None:
     services = _compose()["services"]
 
     assert services["litellm"]["ports"] == [
         "${LITELLM_VM_BIND_HOST:-10.20.30.1}:${LITELLM_PROXY_PORT:-24040}:4000",
     ]
     assert (
-        "127.0.0.1:${ANALYTICS_BACKEND_PORT:-28010}:8010"
+        "${ANALYTICS_BACKEND_BIND_HOST:-10.20.30.1}:"
+        "${ANALYTICS_BACKEND_PORT:-28010}:8010"
         in services["analytics-backend"]["ports"]
     )
-    assert "127.0.0.1:${PHOENIX_HOST_PORT:-26006}:6006" in services["phoenix"][
-        "ports"
-    ]
+    assert "127.0.0.1:${PHOENIX_HOST_PORT:-26006}:6006" in services["phoenix"]["ports"]
     assert (
         "127.0.0.1:${ANALYTICS_POSTGRES_PORT:-55432}:5432"
         in services["analytics-db"]["ports"]

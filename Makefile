@@ -4,10 +4,18 @@ COMPOSE ?= docker compose
 APP_BUILD_SERVICE ?= litellm
 SIBLING_AUTH_DIR ?= ../litellm-proxy/data/chatgpt
 CHATGPT_AUTH_FILE ?= auth.json
+WRAPPER_INSTALL_ROOT ?= $(HOME)/.local/share/litellm-proxy-wrapper
+WRAPPER_BIN_DIR ?= $(HOME)/.local/bin
+WRAPPER_REMOTE_INSTALL_ROOT ?= ~/.local/share/litellm-proxy-wrapper
+WRAPPER_REMOTE_BIN_DIR ?= ~/.local/bin
+WRAPPER_LITELLM_URL ?= http://10.20.30.1:24040
+WRAPPER_REMOTE_HOSTS ?= pankaj@10.20.30.102 neeraj@10.20.30.131
+WRAPPER_SMOKE_MODEL ?= gpt-5.4-mini
+WRAPPER_SMOKE_TIMEOUT ?= 300
 
 .DEFAULT_GOAL := up
 
-.PHONY: up init env auth-import migrate build down restart logs ps mcp models test e2e analytics-smoke codex-session-report codex-session-html codex-session-story lint format-check check config clean
+.PHONY: up init env auth-import migrate build down restart logs ps mcp models install install-wrappers install-remote-wrappers smoke-wrappers smoke-remote-wrappers test e2e analytics-smoke codex-session-report codex-session-html codex-session-story lint format-check check config clean
 
 up: init
 	$(COMPOSE) build $(APP_BUILD_SERVICE)
@@ -59,6 +67,46 @@ mcp: init
 
 models:
 	uv run python scripts/update_litellm_models.py
+
+install: install-wrappers
+
+install-wrappers: env
+	@if [ -f .env ]; then set -a; . ./.env; set +a; fi; \
+	python3 scripts/install_remote_wrappers.py \
+		--source . \
+		--install-root "$(WRAPPER_INSTALL_ROOT)" \
+		--bin-dir "$(WRAPPER_BIN_DIR)" \
+		--litellm-url "$(WRAPPER_LITELLM_URL)"
+
+install-remote-wrappers: env
+	@if [ -z "$(strip $(WRAPPER_REMOTE_HOSTS))" ]; then \
+		printf 'set WRAPPER_REMOTE_HOSTS="user@host ..."\n' >&2; \
+		exit 1; \
+	fi
+	@if [ -f .env ]; then set -a; . ./.env; set +a; fi; \
+	python3 scripts/install_remote_wrappers.py \
+		--source . \
+		--install-root "$(WRAPPER_REMOTE_INSTALL_ROOT)" \
+		--bin-dir "$(WRAPPER_REMOTE_BIN_DIR)" \
+		--litellm-url "$(WRAPPER_LITELLM_URL)" \
+		--remote-hosts "$(WRAPPER_REMOTE_HOSTS)"
+
+smoke-wrappers: env
+	@if [ -f .env ]; then set -a; . ./.env; set +a; fi; \
+	python3 scripts/smoke_agent_cli_wrappers.py \
+		--target local \
+		--model "$(WRAPPER_SMOKE_MODEL)" \
+		--timeout "$(WRAPPER_SMOKE_TIMEOUT)"
+
+smoke-remote-wrappers:
+	@if [ -z "$(strip $(WRAPPER_REMOTE_HOSTS))" ]; then \
+		printf 'set WRAPPER_REMOTE_HOSTS="user@host ..."\n' >&2; \
+		exit 1; \
+	fi
+	@python3 scripts/smoke_agent_cli_wrappers.py \
+		--remote-hosts "$(WRAPPER_REMOTE_HOSTS)" \
+		--model "$(WRAPPER_SMOKE_MODEL)" \
+		--timeout "$(WRAPPER_SMOKE_TIMEOUT)"
 
 test:
 	uv run pytest -q

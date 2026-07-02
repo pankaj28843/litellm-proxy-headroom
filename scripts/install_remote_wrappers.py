@@ -5,6 +5,7 @@ import argparse
 import os
 import shutil
 import stat
+import subprocess
 from pathlib import Path
 from shlex import quote
 
@@ -84,11 +85,32 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="show what would be installed without writing files",
     )
+    parser.add_argument(
+        "--remote",
+        action="append",
+        default=[],
+        metavar="USER@HOST",
+        help=(
+            "install to a remote SSH target instead of this host; may be passed "
+            "more than once"
+        ),
+    )
+    parser.add_argument(
+        "--remote-hosts",
+        default=os.environ.get("WRAPPER_REMOTE_HOSTS", ""),
+        help="space-separated SSH targets to install remotely",
+    )
     return parser.parse_args()
 
 
 def expand(path: Path) -> Path:
     return path.expanduser().resolve(strict=False)
+
+
+def remote_targets(args: argparse.Namespace) -> list[str]:
+    targets = [target.strip() for target in args.remote if target.strip()]
+    targets.extend(args.remote_hosts.split())
+    return list(dict.fromkeys(targets))
 
 
 def ignore_names(_directory: str, names: list[str]) -> set[str]:
@@ -168,6 +190,110 @@ def write_launchers(
         path.chmod(path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
 
 
+def run_command(
+    command: list[str],
+    *,
+    input_text: str | None = None,
+) -> None:
+    subprocess.run(
+        command,
+        check=True,
+        text=True,
+        input=input_text,
+    )
+
+
+def remote_expand_script(path: str, variable_name: str) -> str:
+    return "\n".join(
+        [
+            f"{variable_name}_arg={quote(path)}",
+            f'case "${{{variable_name}_arg}}" in',
+            f"  '~') {variable_name}=\"$HOME\" ;;",
+            f"  '~/'*) {variable_name}=\"$HOME/${{{variable_name}_arg#'~/'}}\" ;;",
+            f'  *) {variable_name}="${{{variable_name}_arg}}" ;;',
+            "esac",
+        ]
+    )
+
+
+def remote_bootstrap_script(install_root: str) -> str:
+    return "\n".join(
+        [
+            "#!/usr/bin/env bash",
+            "set -euo pipefail",
+            remote_expand_script(install_root, "install_root"),
+            'mkdir -p "$install_root"',
+            "",
+        ]
+    )
+
+
+def remote_install_script(args: argparse.Namespace) -> str:
+    install_args = [
+        "--source",
+        str(args.install_root),
+        "--install-root",
+        str(args.install_root),
+        "--bin-dir",
+        str(args.bin_dir),
+        "--litellm-url",
+        args.litellm_url,
+        "--compression-mode",
+        args.compression_mode,
+    ]
+    if args.enable_analytics_mcp:
+        install_args.append("--enable-analytics-mcp")
+    return "\n".join(
+        [
+            "#!/usr/bin/env bash",
+            "set -euo pipefail",
+            "export LITELLM_MASTER_KEY=\"$(cat <<'__LITELLM_MASTER_KEY__'",
+            args.litellm_master_key,
+            "__LITELLM_MASTER_KEY__",
+            ')"',
+            remote_expand_script(str(args.install_root), "install_root"),
+            'python3 "$install_root/scripts/install_remote_wrappers.py" '
+            + " ".join(quote(value) for value in install_args),
+            "",
+        ]
+    )
+
+
+def rsync_excludes() -> list[str]:
+    excludes: list[str] = []
+    for name in sorted(IGNORED_ROOT_NAMES):
+        excludes.extend(["--exclude", name])
+    return excludes
+
+
+def install_remote(args: argparse.Namespace, target: str) -> None:
+    if args.dry_run:
+        print(
+            f"would_install_remote target={target} install_root={args.install_root} "
+            f"bin_dir={args.bin_dir} litellm_url={args.litellm_url} "
+            f"analytics_mcp={'enabled' if args.enable_analytics_mcp else 'disabled'} "
+            f"compression_mode={args.compression_mode}"
+        )
+        return
+
+    source = expand(args.source)
+    install_root = str(args.install_root)
+    run_command(
+        ["ssh", target, "bash", "-s"], input_text=remote_bootstrap_script(install_root)
+    )
+    run_command(
+        [
+            "rsync",
+            "-a",
+            "--delete",
+            *rsync_excludes(),
+            f"{source}/",
+            f"{target}:{install_root.rstrip('/')}/",
+        ]
+    )
+    run_command(["ssh", target, "bash", "-s"], input_text=remote_install_script(args))
+
+
 def main() -> int:
     args = parse_args()
     if not args.litellm_master_key:
@@ -175,19 +301,26 @@ def main() -> int:
             "install_remote_wrappers.py: set LITELLM_MASTER_KEY or pass "
             "--litellm-master-key."
         )
-    source = expand(args.source)
-    install_root = expand(args.install_root)
-    bin_dir = expand(args.bin_dir)
-    copy_source(source, install_root, dry_run=args.dry_run)
-    write_launchers(args, install_root, bin_dir)
-    action = "would_install" if args.dry_run else "installed"
-    print(
-        f"{action}_wrappers={','.join(f'{name}-litellm' for name in WRAPPERS)} "
-        f"install_root={install_root} bin_dir={bin_dir} "
-        f"litellm_url={args.litellm_url} "
-        f"analytics_mcp={'enabled' if args.enable_analytics_mcp else 'disabled'} "
-        f"compression_mode={args.compression_mode}"
-    )
+    targets = remote_targets(args)
+    if targets:
+        for target in targets:
+            install_remote(args, target)
+            if not args.dry_run:
+                print(f"installed_remote target={target}")
+    else:
+        source = expand(args.source)
+        install_root = expand(args.install_root)
+        bin_dir = expand(args.bin_dir)
+        copy_source(source, install_root, dry_run=args.dry_run)
+        write_launchers(args, install_root, bin_dir)
+        action = "would_install" if args.dry_run else "installed"
+        print(
+            f"{action}_wrappers={','.join(f'{name}-litellm' for name in WRAPPERS)} "
+            f"install_root={install_root} bin_dir={bin_dir} "
+            f"litellm_url={args.litellm_url} "
+            f"analytics_mcp={'enabled' if args.enable_analytics_mcp else 'disabled'} "
+            f"compression_mode={args.compression_mode}"
+        )
     return 0
 
 

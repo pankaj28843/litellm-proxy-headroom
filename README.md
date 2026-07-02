@@ -299,21 +299,19 @@ runs. The managed homes keep wrapper-owned files real and symlink compatible
 native state such as auth/session files around them where the CLI supports that,
 while excluding native settings, generated config, and route caches that could
 override the LiteLLM endpoint. To put wrappers on your PATH without changing
-global agent config, symlink the wrapper names:
+global agent config, install repo-local launchers:
 
 ```bash
-ln -sf "$PWD/bin/codex-litellm" "$HOME/.local/bin/codex-litellm"
-ln -sf "$PWD/bin/claude-litellm" "$HOME/.local/bin/claude-litellm"
-ln -sf "$PWD/bin/opencode-litellm" "$HOME/.local/bin/opencode-litellm"
-ln -sf "$PWD/bin/copilot-litellm" "$HOME/.local/bin/copilot-litellm"
-ln -sf "$PWD/bin/pi-litellm" "$HOME/.local/bin/pi-litellm"
+make install-wrappers
+make smoke-wrappers
 ```
 
 For sibling VMs, install a copied wrapper tree plus launchers instead of
 symlinks:
 
 ```bash
-LITELLM_MASTER_KEY=... python3 scripts/install_remote_wrappers.py
+make install-remote-wrappers WRAPPER_REMOTE_HOSTS="pankaj@10.20.30.102 neeraj@10.20.30.131"
+make smoke-remote-wrappers WRAPPER_REMOTE_HOSTS="pankaj@10.20.30.102 neeraj@10.20.30.131"
 ```
 
 The installer defaults launchers to `http://10.20.30.1:24040`, disables

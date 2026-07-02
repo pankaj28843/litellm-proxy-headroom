@@ -99,6 +99,12 @@ operator-facing service in this repository.
   only on the target machine. Keep remote launchers compression-disabled by
   default with `*_LITELLM_COMPRESSION_MODE=off` and
   `*_LITELLM_DISABLE_ANALYTICS_MCP=1` where supported.
+- Prefer the Makefile wrapper workflow over ad hoc install/smoke commands:
+  `make install-wrappers`, `make smoke-wrappers`,
+  `make install-remote-wrappers WRAPPER_REMOTE_HOSTS="pankaj@10.20.30.102 neeraj@10.20.30.131"`,
+  and `make smoke-remote-wrappers WRAPPER_REMOTE_HOSTS="pankaj@10.20.30.102 neeraj@10.20.30.131"`.
+  The smoke workflow uses `gpt-5.4-mini`, compression off, and supported
+  reasoning settings for wrappers that need them.
 - Current reachable remote install targets are `pankaj@10.20.30.102` and
   `neeraj@10.20.30.131`. The previously typed `pankaj@01.20.30.102` was not
   reachable as SSH parsed it.
